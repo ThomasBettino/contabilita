@@ -192,6 +192,8 @@ const inRitardo = aperti.filter((t) => t.richiamo && t.richiamo < tk);
 const richiamiOggi = aperti.filter((t) => t.richiamo === tk);
 const daSaldare = tutte.filter((t) => t.stato === 'venduto' && cstOf(t) === 'da_saldare' && prezzoV(t) && residuo(t) > 0);
 const auto = (t) => [t.marca, t.modello].filter(Boolean).join(' ');
+const chi = (t) => t.nome || 'Cliente';
+const tra = (...parti) => parti.filter(Boolean).join(', ');
 
 // Agenda dei prossimi 7 giorni: appuntamenti e test drive della app, più i richiami dei preventivi aperti.
 const agenda = agendaItems(tk, addDays(tk, 7)).map((x) => ({ data: x.data, ora: x.ora, titolo: x.tit, dettagli: x.sub, fatto: x.fatto }));
@@ -224,8 +226,8 @@ const aggiungi = (id, titolo, testo) => { if (!giaInviate.has(id)) avvisi.push({
 
 if (inRitardo.length || richiamiOggi.length) {
   const righe = [];
-  if (inRitardo.length) righe.push('In ritardo: ' + inRitardo.map((t) => `${t.nome} (${auto(t)}, dal ${dayLabel(t.richiamo)})`).join('; ') + '.');
-  if (richiamiOggi.length) righe.push('Oggi: ' + richiamiOggi.map((t) => `${t.nome} (${auto(t)})`).join('; ') + '.');
+  if (inRitardo.length) righe.push('In ritardo: ' + inRitardo.map((t) => `${chi(t)} (${tra(auto(t), 'dal ' + dayLabel(t.richiamo))})`).join('; ') + '.');
+  if (richiamiOggi.length) righe.push('Oggi: ' + richiamiOggi.map((t) => chi(t) + (auto(t) ? ` (${auto(t)})` : '')).join('; ') + '.');
   aggiungi(`richiami-${tk}`, 'Clienti da richiamare', righe.join(' '));
 }
 
@@ -235,18 +237,19 @@ if (inAgendaOggi.length) {
 }
 
 // Impegni che iniziano entro 90 minuti: il battito orario li intercetta almeno una volta.
+// L'ora fa parte dell'id, così un impegno spostato nello stesso giorno riceve un nuovo promemoria.
 const minutiDa = (oraStr) => { const [h, m] = oraStr.split(':').map(Number); return h * 60 + m - (ora.getHours() * 60 + ora.getMinutes()); };
 for (const x of agendaItems(tk, tk)) {
   if (x.fatto || !x.ora) continue;
   const mancano = minutiDa(x.ora);
-  if (mancano >= 0 && mancano <= 90) aggiungi(`presto-${x.k}-${x.id}-${tk}`, `Alle ${x.ora}: ${x.tit}`, x.sub || x.tit);
+  if (mancano >= 0 && mancano <= 90) aggiungi(`presto-${x.k}-${x.id}-${tk}-${x.ora.replace(':', '')}`, `Alle ${x.ora}: ${x.tit}`, x.sub || x.tit);
 }
 
 // Saldi da incassare: una volta a settimana (id legato al lunedì della settimana).
 const lunedi = addDays(tk, -((dOf(tk).getDay() + 6) % 7));
 if (daSaldare.length) {
   const pagamento = (t) => finOf(t) ? `${FORMS[t.formula] || 'finanziato'}, finanziamento ${FST[finOf(t)].l.toLowerCase()}` : 'contanti';
-  aggiungi(`saldi-${lunedi}`, 'Saldi da incassare', daSaldare.map((t) => `${t.nome} (${auto(t)}, ${pagamento(t)}): mancano ${eur(residuo(t))}`).join('; ') + '.');
+  aggiungi(`saldi-${lunedi}`, 'Saldi da incassare', daSaldare.map((t) => `${chi(t)} (${tra(auto(t), pagamento(t))}): mancano ${eur(residuo(t))}`).join('; ') + '.');
 }
 
 scrivi(path.join(dirUscita, 'sync', 'vendite.json'), {

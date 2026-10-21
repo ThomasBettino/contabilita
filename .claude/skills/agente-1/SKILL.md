@@ -43,12 +43,9 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 ```bash
 # export dei dati vendite con ArtifactData list/get e out_dir, poi:
 TZ=Europe/Rome node agente/ponte/vendite.js <export-vendite> <export-notifiche-agente> <uscita>
-node agente/ponte/contabilita.js <uscita>   # serve CONTABILITA_URL e CONTABILITA_TOKEN
+NODE_USE_ENV_PROXY=1 node agente/ponte/contabilita.js <uscita> [collegamento.json]   # {url, token}, oppure CONTABILITA_URL/TOKEN
 ```
 
 ## Contabilità
 
-L'ambiente cloud "Assistente AI" blocca `script.google.com`. Per collegarla servono due cose:
-
-- che il proprietario consenta `script.google.com` e `script.googleusercontent.com` nelle impostazioni di rete dell'ambiente;
-- l'indirizzo e il codice dello script della app di contabilità.
+Il proprietario salva indirizzo e codice dello script dall'app (pulsante Collega del nodo Contabilità, documento privato `data/users/<id>/contabilita`). Il battito li legge con `ArtifactData` (`data/users/me`). Serve anche che l'ambiente cloud "Assistente AI" consenta `script.google.com` e `script.googleusercontent.com`, oggi bloccati. Nel container il fetch di Node usa il proxy solo con `NODE_USE_ENV_PROXY=1`.

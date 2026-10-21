@@ -44,14 +44,14 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 | `config/ponte` | Id dell'attività programmata, per il pulsante Aggiorna | Claude |
 | `data/users/<tu>/chat`, `.../memoria` | Conversazione e cose da ricordare, private | Agente 1 |
 
-## Contabilità: cosa manca
+## Contabilità: come si collega
 
-La pagina non può contattare lo script Google, e l'ambiente cloud del battito al momento blocca `script.google.com`. Per collegarla:
+La pagina non può contattare lo script Google, quindi la contabilità passa dal battito. Servono due cose:
 
-1. Nelle impostazioni dell'ambiente cloud (menu dell'ambiente nella barra della sessione, poi Modifica), sotto Accesso di rete aggiungi `script.google.com` e `script.googleusercontent.com` ai domini consentiti.
-2. Nello stesso ambiente aggiungi le variabili `CONTABILITA_URL` e `CONTABILITA_TOKEN`, cioè gli stessi valori che usa la app di contabilità.
+1. **Nell'app Agente 1:** tocca **Collega** sotto il nodo Contabilità e incolla indirizzo e codice dello script, gli stessi della app di contabilità. Restano privati in `data/users/<tu>/contabilita`.
+2. **Nell'ambiente cloud "Assistente AI":** (menu dell'ambiente nella barra della sessione, poi Modifica) sotto Accesso di rete aggiungi `script.google.com` e `script.googleusercontent.com` ai domini consentiti. Oggi sono bloccati.
 
-Dal battito successivo lo specialista Contabilità avrà i numeri.
+Il battito esegue `contabilita.js` con `NODE_USE_ENV_PROXY=1`: senza, il fetch di Node ignora il proxy del container. Se lo script non risponde, il nodo Contabilità mostra "non raggiungibile".
 
 ## Limiti da conoscere
 
