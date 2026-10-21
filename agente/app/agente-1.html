@@ -321,13 +321,13 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
       <h2 id="titoloConta">Collega la contabilità</h2>
       <button type="button" class="pill" id="btnChiudiConta">Chiudi</button>
     </header>
-    <p>Copia questi due valori dalle impostazioni della tua app Contabilità. Restano privati: li legge solo il battito di Agente 1.</p>
+    <p>Copia questi due valori dalla tua app Contabilità: Avvisi › Impostazioni › Collegamento a Google. Restano privati: li legge solo il battito di Agente 1.</p>
     <div class="campo-foglio">
-      <label for="contaUrl">Indirizzo dello script Google</label>
+      <label for="contaUrl">Indirizzo dello script (URL)</label>
       <input id="contaUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec">
     </div>
     <div class="campo-foglio">
-      <label for="contaToken">Codice di accesso</label>
+      <label for="contaToken">Codice segreto</label>
       <input id="contaToken" type="password" autocomplete="off">
     </div>
     <p class="errore-foglio" id="erroreConta" hidden></p>
@@ -719,7 +719,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     const token = $("contaToken").value.trim();
     const errore = (t) => { $("erroreConta").textContent = t; $("erroreConta").hidden = false; };
     if (!/^https:\/\/script\.google(usercontent)?\.com\/\S+$/.test(url)) return errore("L'indirizzo deve iniziare con https://script.google.com/");
-    if (!token) return errore("Inserisci il codice di accesso.");
+    if (!token) return errore("Inserisci il codice segreto.");
     const ref = docUtente("contabilita");
     if (!ref) return errore("Non posso salvare in questa vista.");
     $("btnSalvaConta").disabled = true;
