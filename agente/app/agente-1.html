@@ -757,7 +757,8 @@ body:not([data-stato="riposo"]) .stato{color:var(--blu);text-shadow:0 0 8px rgba
     if (!S.triggerId) { toast("Battito non configurato", "Chiedi a Claude di attivare il battito di Agente 1."); return; }
     $("btnAggiorna").disabled = true;
     try {
-      await S.mcp.callTool("Claude Code Remote", "fire_trigger", { trigger_id: S.triggerId, text: "Aggiornamento chiesto dall'app Agente 1." });
+      // Senza testo aggiuntivo: un testo arriverebbe come secondo messaggio e farebbe ripartire il battito.
+      await S.mcp.callTool("Claude Code Remote", "fire_trigger", { trigger_id: S.triggerId });
       toast("Aggiornamento avviato", "Il battito rilegge vendite, meteo e contabilità: i dati arrivano in pochi minuti.");
     } catch (e) {
       toast("Aggiornamento non riuscito", erroreConnettore(e, "Claude Code Remote"));
