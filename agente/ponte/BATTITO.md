@@ -21,8 +21,8 @@ Parte anche quando premi **Aggiorna** nell'app.
 
 1. **Script.** Crea una cartella di lavoro nuova `W` nella scratchpad, con dentro `W/ponte`.
    - Nel repository `ThomasBettino/contabilita` (se non è già presente, clonalo) esegui `git fetch origin claude/ai-agent-app-integration-vbdloz`. Se il branch non esiste, usa `main`.
-   - Copia gli script: `git show FETCH_HEAD:agente/ponte/vendite.js > W/ponte/vendite.js`, e lo stesso per `contabilita.js` e `stelle.js`.
-   - Controlla che i tre file non siano vuoti. Se lo sono, fermati e scrivilo nel messaggio finale.
+   - Copia gli script: `git show FETCH_HEAD:agente/ponte/vendite.js > W/ponte/vendite.js`, e lo stesso per `contabilita.js`, `stelle.js` e `backup.js`.
+   - Controlla che i quattro file non siano vuoti. Se lo sono, fermati e scrivilo nel messaggio finale.
 2. **Vendite.** Con `ArtifactData` su VENDITE, azione `list` con `query.limit` 1000 e `out_dir` uguale a `W/vendite`, esporta le collezioni `trattative`, `giorni`, `mesi` e `appuntamenti`. Poi azione `get` su `config`/`impostazioni` con lo stesso `out_dir`.
    **Stelle:** con `ArtifactData` su STELLE, azione `list` della collezione `richieste` con `query.limit` 1000 e `out_dir` uguale a `W/stelle`. Se fallisce, salta il passo 4b.
 3. **Stato di Agente 1.** Con `ArtifactData` su AGENTE1:
@@ -36,4 +36,9 @@ Parte anche quando premi **Aggiorna** nell'app.
 7. **Scrittura.** Con `ArtifactData` su AGENTE1 fai **due** azioni `batch` separate.
    - **Batch dei sync:** per ogni file `W/out/sync/<nome>.json`, `set` su `sync`/`<nome>` con `file_path`, e `if_version` uguale alla versione annotata al passo 3; omettilo se il documento non esisteva. Se viene rifiutato perché una versione è cambiata, rileggi `sync`, aggiorna le versioni e riprova una volta.
    - **Batch degli avvisi:** per ogni file `W/out/notifiche/<id>.json`, `set` su `notifiche`/`<id>` con `file_path`, senza `if_version`. Se il rifiuto nomina un avviso che esiste già, toglilo dal batch e riprova, al massimo due volte. Salta questo batch se non ci sono file o se la lettura degli avvisi al passo 3 è fallita.
+7c. **Backup giornaliero.** Solo se il documento `backup/indice` di AGENTE1 manca o il suo campo `giorno` non è la data di oggi a Roma (formato AAAA-MM-GG). Leggilo con un'azione `get` con `out_dir` uguale a `W/bk-vecchio`.
+   - **Export in più:** su STELLE, `list` di `decisioni` e di `stato` con `out_dir` uguale a `W/stelle`. Su AGENTE1, con `out_dir` uguale a `W/a1`: `list` di `config`, `list` di `notifiche` con `query.limit` 1000, e `list` della collezione `data/users/me`.
+   - **Backup:** `TZ=Europe/Rome node W/ponte/backup.js W/out "Andamento vendite=W/vendite" "Un passo alla volta=W/stelle" "Agente 1=W/a1"`
+   - **Versioni:** su AGENTE1, `list` della collezione `backup` con `out_dir` uguale a `W/bk-vecchio`, e annota la `version` di ogni documento.
+   - **Scrittura:** con azioni `batch` di al massimo 4 voci ciascuna, `set` su `backup`/`<nome>` per ogni file `W/out/backup/<nome>.json`. Usa `if_version` uguale alla versione annotata, omesso se il documento non esisteva. Scrivi `indice` per ultimo, nell'ultimo batch.
 8. **Messaggio finale.** Diventa la notifica sul telefono. Se hai scritto avvisi nuovi, riassumili in 1–3 righe brevi in italiano. Altrimenti scrivi solo: `Nessuna novità.`

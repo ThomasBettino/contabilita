@@ -24,6 +24,7 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 | `notifiche/<id>` | `{titolo, testo, ora, fonte, letta, link?, richieste?}`; id stabili per non ripetere gli avvisi; gli avvisi delle stelle elencano in `richieste` gli id che coprono |
 | `config/agenti` | `{istruzioni:{vendite,agenda,contabilita,meteo}, storia[]}` scritti da `migliora_agente` |
 | `config/ponte` | `{triggerId}` |
+| `backup/indice`, `backup/parte-<n>` | backup giornaliero di tutto, scritto da `backup.js` al primo battito del giorno e sovrascritto ogni giorno; l'app lo ricompone e lo salva sul telefono con `downloads` |
 | `data/users/<id>/chat`, `/memoria` | privati del proprietario |
 
 ## Come modificare l'app
