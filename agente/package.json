@@ -1,0 +1,13 @@
+{
+  "name": "agente-1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agente 1: capo di una squadra di agenti IA con chat web e voce",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

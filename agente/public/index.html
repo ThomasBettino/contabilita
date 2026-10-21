@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05060d">
+<title>Agente 1</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-stato="ascolto">
+<header class="testa">
+  <span class="marchio">AGENTE 1</span>
+  <button id="btn-notifiche" class="pillola" type="button">Notifiche</button>
+</header>
+
+<main>
+  <section class="capo" aria-live="polite">
+    <button id="orb" class="orb" type="button" aria-label="Parla con Agente 1"></button>
+    <p id="stato" class="stato">in ascolto</p>
+  </section>
+  <ol id="chat" class="chat"></ol>
+</main>
+
+<form id="form" class="barra" autocomplete="off">
+  <button id="btn-voce" class="pillola" type="button">Parla</button>
+  <input id="input" type="text" placeholder="Scrivi o parla ad Agente 1" aria-label="Messaggio">
+  <button id="btn-voce-uscita" class="pillola" type="button">Voce off</button>
+  <button class="invia" type="submit">Invia</button>
+</form>
+
+<div id="avvisi" class="avvisi" aria-live="polite"></div>
+
+<div id="velo-token" class="velo" hidden>
+  <form id="form-token" class="scheda">
+    <p>Inserisci il codice di accesso</p>
+    <input id="input-token" type="password" autocomplete="current-password" aria-label="Codice di accesso">
+    <button type="submit" class="invia">Entra</button>
+  </form>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
