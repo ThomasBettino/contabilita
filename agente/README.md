@@ -59,7 +59,3 @@ Dal battito successivo lo specialista Contabilità avrà i numeri.
 - **Freschezza:** vendite e contabilità sono aggiornate al battito più recente, ogni ora dalle 8 alle 21, oppure quando premi Aggiorna. Google Calendar è sempre in diretta.
 - **Vendite in sola lettura:** Agente 1 legge l'app vendite ma non la modifica. Per registrare chiamate o vendite usa l'app, o il suo Coach.
 - **Costo:** ogni battito è una breve sessione Claude sul tuo piano, 14 al giorno. Puoi cambiare orari o frequenza dell'attività programmata.
-
-## Versione precedente
-
-`server.js`, `public/`, `agenti.json`, `dati/`, `package.json`, `.env.example` e `../render.yaml` sono la prima versione, pensata per un server Node su Render. Non è più usata: non può leggere l'artefatto vendite e richiedeva una chiave API a pagamento. Si può eliminare.
