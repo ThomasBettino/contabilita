@@ -324,11 +324,11 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     <p>Copia questi due valori dalla tua app Contabilità: Avvisi › Impostazioni › Collegamento a Google. Restano privati: li legge solo il battito di Agente 1.</p>
     <div class="campo-foglio">
       <label for="contaUrl">Indirizzo dello script (URL)</label>
-      <input id="contaUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec">
+      <input id="contaUrl" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
     </div>
     <div class="campo-foglio">
       <label for="contaToken">Codice segreto</label>
-      <input id="contaToken" type="password" autocomplete="off">
+      <input id="contaToken" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Tieni premuto qui e scegli Incolla">
     </div>
     <p class="errore-foglio" id="erroreConta" hidden></p>
     <button type="submit" class="pill" id="btnSalvaConta">Salva e collega</button>
