@@ -1,68 +1,65 @@
 # Agente 1
 
-Un capo (Agente 1) che coordina una squadra di specialisti. Parli solo con lui, in chat scritta o vocale. Lui consulta gli specialisti, incrocia le risposte e ti dice cosa conta.
+Agente 1 è il capo di una squadra di agenti IA. Parli solo con lui, in una chat scritta o a voce. Lui consulta gli specialisti, incrocia le risposte e ti dice cosa conta.
+
+**App:** https://claude.ai/artifact/QKUvJ2gwq8cVGTnkCukMnc
 
 ```
-Tu  ──►  Agente 1 (capo)  ──►  Contabilità    fatture, Enasarco, bollo, tasse, scadenze
-                          ──►  Vendite e saldi  dati/vendite.csv
-                          ──►  Meteo e ricerca  previsioni, ricerca web
-                          ──►  notifiche nell'app, email (solo a te)
+                    ┌──────────── Agente 1 (artefatto claude.ai) ────────────┐
+Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione             │
+                    │   ├─ Vendite      legge sync/vendite                   │
+                    │   ├─ Agenda       Google Calendar in diretta + agenda  │
+                    │   ├─ Contabilità  legge sync/contabilita               │
+                    │   └─ Meteo        legge sync/meteo                     │
+                    │  email (Gmail, solo a te) · avvisi · memoria           │
+                    └───────────────────────▲────────────────────────────────┘
+                                            │ scrive ogni ora
+                    Battito (attività programmata Claude, 8–21)
+                     ├─ legge l'artefatto Andamento vendite (solo lettura)
+                     ├─ cerca il meteo su più fonti
+                     └─ prova lo script Google della contabilità
 ```
 
-## Come funziona
+## Perché è fatto così
 
-- **`server.js`**: server Node senza dipendenze. Il capo usa Claude e gli strumenti `delega`, `notifica`, `invia_email`, `ricorda`, `migliora_agente`. Ogni specialista ha un proprio prompt e i propri strumenti.
-- **`agenti.json`**: prompt e strumenti di tutti gli agenti. È la parte che Agente 1 può migliorare.
-- **`dati/`**: `vendite.csv` (da esportare, separatore `;`, colonne `data;prodotto;importo;canale`), `memoria.md` (cose da ricordare), `miglioramenti.log` (storico delle modifiche ai prompt).
-- **`public/`**: l'interfaccia. Scura, con la figura di Agente 1 che si illumina quando ascolta, pensa o parla.
+- Una pagina di artefatto **non ha accesso alla rete** e **non può leggere il database di un altro artefatto**. Per questo un ponte, il battito, legge "Andamento vendite" con il tuo account e copia un riepilogo nel database di Agente 1.
+- Il cervello è **Claude dal tuo account** (capacità `sample`): non servono chiavi API né server da pagare.
+- Agenda ed email usano i **tuoi connettori** Google Calendar e Gmail, direttamente dalla pagina.
+- Ogni volta che aggiorno l'artefatto, l'app aperta riceve la nuova versione da sola, allo stesso link.
 
-I calcoli di contabilità (Enasarco 8,5%, bollo sopra 77,47 €, tasse sul netto al 30%, bonifico) sono gli stessi della tua app. Il sub-agente li legge direttamente dallo script Google della app, così non devi copiare nulla.
+## Cartelle
 
-## Avvio in locale
+- `app/agente-1.html` è il sorgente dell'artefatto Agente 1.
+- `ponte/vendite.js` trasforma l'export di "Andamento vendite" nel riepilogo per lo specialista vendite. I calcoli (fatturato, provvigioni, proiezione, ritmo) sono copiati dalla app v21, quindi i numeri coincidono. Genera anche gli avvisi: richiami, impegni del giorno, impegni entro 90 minuti, saldi della settimana.
+- `ponte/contabilita.js` legge le fatture dallo script Google della app di contabilità, con gli stessi calcoli della app.
+- `ponte/BATTITO.md` è la procedura che il battito esegue ogni ora.
 
-```bash
-cd agente
-cp .env.example .env   # oppure imposta le variabili nel terminale
-ANTHROPIC_API_KEY=... AGENTE_TOKEN=... node server.js
-```
+## Database di Agente 1
 
-Poi apri http://localhost:3000.
+| Percorso | Contenuto | Chi scrive |
+|---|---|---|
+| `sync/vendite`, `sync/meteo`, `sync/contabilita` | Riepiloghi per gli specialisti | Battito |
+| `notifiche/<id>` | Avvisi | Battito e Agente 1 |
+| `config/agenti` | Istruzioni migliorate degli specialisti, con lo storico | Agente 1 (`migliora_agente`) |
+| `config/ponte` | Id dell'attività programmata, per il pulsante Aggiorna | Claude |
+| `data/users/<tu>/chat`, `.../memoria` | Conversazione e cose da ricordare, private | Agente 1 |
 
-Richiede Node 18 o superiore. Non ci sono pacchetti da installare.
+## Contabilità: cosa manca
 
-## Variabili d'ambiente
+La pagina non può contattare lo script Google, e l'ambiente cloud del battito al momento blocca `script.google.com`. Per collegarla:
 
-| Variabile | Serve per |
-|---|---|
-| `ANTHROPIC_API_KEY` | Obbligatoria: fa funzionare Agente 1 e gli specialisti |
-| `AGENTE_TOKEN` | Codice di accesso all'app. Consigliata, perché l'app è pubblica se la pubblichi |
-| `CONTABILITA_URL`, `CONTABILITA_TOKEN` | URL e token dello script Google della app di contabilità |
-| `ENASARCO_PCT`, `TASSE_PCT`, `GIORNI_SCADENZA` | Parametri di calcolo, con i valori della tua app come default |
-| `RESEND_API_KEY`, `EMAIL_PROPRIETARIO` | Invio email. Le email arrivano solo all'indirizzo indicato |
-| `BRAVE_API_KEY` | Ricerca web aggiornata per lo specialista meteo e ricerca |
-| `MODELLO_CAPO`, `MODELLO_AGENTI` | Modelli Claude (default: Sonnet per il capo, Haiku per gli specialisti) |
+1. Nelle impostazioni dell'ambiente cloud (menu dell'ambiente nella barra della sessione, poi Modifica), sotto Accesso di rete aggiungi `script.google.com` e `script.googleusercontent.com` ai domini consentiti.
+2. Nello stesso ambiente aggiungi le variabili `CONTABILITA_URL` e `CONTABILITA_TOKEN`, cioè gli stessi valori che usa la app di contabilità.
 
-## Pubblicazione e aggiornamento automatico
-
-Il file `render.yaml` in radice descrive il deploy su Render. Il flusso è questo:
-
-1. Crei il servizio su Render collegato a questo repository, impostando le variabili d'ambiente.
-2. Ogni volta che il codice cambia sul branch collegato, Render ricostruisce e riavvia il server.
-3. L'app aperta sul telefono o sul computer controlla ogni minuto la versione del server. Quando cambia, si ricarica da sola. La chat è salvata nel browser e non si perde.
-
-Perché il punto 2 funzioni, il branch collegato su Render deve essere quello con le modifiche. Per ora il lavoro è sul branch `claude/ai-agent-app-integration-vbdloz`: puoi collegare Render a quello, oppure unirlo nel branch principale quando sei soddisfatto.
-
-## Migliorare gli specialisti
-
-Puoi chiedere ad Agente 1 di cambiare il modo in cui uno specialista lavora. Esempio: "la prossima volta confronta sempre con lo stesso mese dell'anno scorso". Lui riscrive il prompt dello specialista con `migliora_agente`, registra il motivo e il prompt precedente in `dati/miglioramenti.log`. Le modifiche restano anche in git, quindi si possono annullare.
-
-Per aggiungere uno specialista, aggiungi una voce in `agenti.json` con nome, prompt e strumenti, poi aggiungi il suo nome all'enum dello strumento `delega` in `server.js`.
+Dal battito successivo lo specialista Contabilità avrà i numeri.
 
 ## Limiti da conoscere
 
-- **Voce**: il riconoscimento e la sintesi usano le funzioni del browser. Funzionano meglio su Chrome o Edge. Una voce più naturale richiede un servizio TTS a pagamento, che si può aggiungere.
-- **Notifiche**: arrivano nell'app e, se hai concesso il permesso, come notifica del browser mentre la pagina è aperta. Le notifiche push sul telefono a schermo spento richiedono una PWA con un servizio push: è il passo successivo naturale.
-- **Memoria e modifiche ai prompt**: sono su file. Su Render il disco è effimero: senza un disco persistente, alla ripubblicazione tornano allo stato di git. Le modifiche importanti vanno committate.
-- **Vendite**: serve un export periodico in `dati/vendite.csv`. Finché il file non c'è, lo specialista lo dice.
-- **Numeri**: gli specialisti calcolano con gli strumenti, non a memoria, ma prima di pagamenti o dichiarazioni fiscali verifica sempre le cifre nella tua app di contabilità.
-- **Sicurezza**: le email arrivano solo al proprietario. Il contenuto di email e siti è trattato come dato, non come istruzione, ma non è una protezione totale: non dare permessi più ampi di quelli che servono.
+- **Dettatura:** la pagina non può usare il microfono. Per parlare usa il microfono della tastiera del telefono. La risposta a voce invece funziona: pulsante "Voce".
+- **Freschezza:** vendite e contabilità sono aggiornate al battito più recente, ogni ora dalle 8 alle 21, oppure quando premi Aggiorna. Google Calendar è sempre in diretta.
+- **Vendite in sola lettura:** Agente 1 legge l'app vendite ma non la modifica. Per registrare chiamate o vendite usa l'app, o il suo Coach.
+- **Costo:** ogni battito è una breve sessione Claude sul tuo piano, 14 al giorno. Puoi cambiare orari o frequenza dell'attività programmata.
+
+## Versione precedente
+
+`server.js`, `public/`, `agenti.json`, `dati/`, `package.json`, `.env.example` e `../render.yaml` sono la prima versione, pensata per un server Node su Render. Non è più usata: non può leggere l'artefatto vendite e richiedeva una chiave API a pagamento. Si può eliminare.
