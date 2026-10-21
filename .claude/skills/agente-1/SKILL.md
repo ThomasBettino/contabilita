@@ -9,7 +9,8 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 
 - **App:** artefatto https://claude.ai/artifact/QKUvJ2gwq8cVGTnkCukMnc, sorgente `agente/app/agente-1.html`. È fissato nella barra laterale di claude.ai.
 - **Dati vendite:** artefatto "Andamento vendite" https://claude.ai/artifact/1Gb9qxq1uJmv5yEzsq6q8A. **Solo lettura**: Agente 1 non ci scrive mai.
-- **Ponte:** `agente/ponte/vendite.js`, `agente/ponte/contabilita.js` e la procedura `agente/ponte/BATTITO.md`.
+- **Stelle:** artefatto "Un passo alla volta" https://claude.ai/artifact/1JND3NoRY2ae7e8VH6RFyW, app per l'ADHD della ragazza del proprietario. Le richieste di stelle stanno nella collezione `richieste` (`{text, pts, at, name}`); le conferma solo il proprietario dall'app (pulsante 🔒, scrive `decisioni`). **Solo lettura** per Agente 1 e il battito.
+- **Ponte:** `agente/ponte/vendite.js`, `agente/ponte/stelle.js`, `agente/ponte/contabilita.js` e la procedura `agente/ponte/BATTITO.md`.
 - **Battito:** attività programmata `trig_012d788GhKJBKNVePY1YUhKv` ("Battito di Agente 1"), ogni ora dalle 8:07 alle 21:07 ora italiana. Ogni esecuzione è una sessione nuova con notifica push. L'id sta anche in `config/ponte` del database di Agente 1, per il pulsante Aggiorna.
 
 ## Database di Agente 1
@@ -18,8 +19,9 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 |---|---|
 | `sync/vendite` | `{aggiornato, fonte, polso, agenda[], testo}` scritto da `vendite.js` |
 | `sync/meteo` | `{aggiornato, luogo, testo, fonti[]}` scritto dal battito |
-| `sync/contabilita` | `{aggiornato, fonte, testo}` scritto da `contabilita.js` |
-| `notifiche/<id>` | `{titolo, testo, ora, fonte, letta}`; id stabili per non ripetere gli avvisi |
+| `sync/contabilita` | `{aggiornato, fonte, testo, stato?}` scritto da `contabilita.js` |
+| `sync/stelle` | `{aggiornato, fonte, link, nome, inAttesa, stelle, testo}` scritto da `stelle.js` |
+| `notifiche/<id>` | `{titolo, testo, ora, fonte, letta, link?, richieste?}`; id stabili per non ripetere gli avvisi; gli avvisi delle stelle elencano in `richieste` gli id che coprono |
 | `config/agenti` | `{istruzioni:{vendite,agenda,contabilita,meteo}, storia[]}` scritti da `migliora_agente` |
 | `config/ponte` | `{triggerId}` |
 | `data/users/<id>/chat`, `/memoria` | privati del proprietario |
@@ -43,6 +45,7 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 ```bash
 # export dei dati vendite con ArtifactData list/get e out_dir, poi:
 TZ=Europe/Rome node agente/ponte/vendite.js <export-vendite> <export-notifiche-agente> <uscita>
+TZ=Europe/Rome node agente/ponte/stelle.js <export-richieste> <export-notifiche-agente> <uscita>
 NODE_USE_ENV_PROXY=1 node agente/ponte/contabilita.js <uscita> [collegamento.json]   # {url, token}, oppure CONTABILITA_URL/TOKEN
 ```
 

@@ -10,12 +10,14 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                     │   ├─ Vendite      legge sync/vendite                   │
                     │   ├─ Agenda       Google Calendar in diretta + agenda  │
                     │   ├─ Contabilità  legge sync/contabilita               │
-                    │   └─ Meteo        legge sync/meteo                     │
+                    │   ├─ Meteo        legge sync/meteo                     │
+                    │   └─ Stelle       legge sync/stelle                    │
                     │  email (Gmail, solo a te) · avvisi · memoria           │
                     └───────────────────────▲────────────────────────────────┘
                                             │ scrive ogni ora
                     Battito (attività programmata Claude, 8–21)
                      ├─ legge l'artefatto Andamento vendite (solo lettura)
+                     ├─ legge le stelle in attesa di Un passo alla volta (solo lettura)
                      ├─ cerca il meteo su più fonti
                      └─ prova lo script Google della contabilità
 ```
@@ -31,6 +33,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 
 - `app/agente-1.html` è il sorgente dell'artefatto Agente 1.
 - `ponte/vendite.js` trasforma l'export di "Andamento vendite" nel riepilogo per lo specialista vendite. I calcoli (fatturato, provvigioni, proiezione, ritmo) sono copiati dalla app v21, quindi i numeri coincidono. Genera anche gli avvisi: richiami, impegni del giorno, impegni entro 90 minuti, saldi della settimana.
+- `ponte/stelle.js` legge le richieste di stelle in attesa di "Un passo alla volta" e crea un avviso per quelle nuove. Le stelle si confermano solo dall'app, con il pulsante 🔒.
 - `ponte/contabilita.js` legge le fatture dallo script Google della app di contabilità, con gli stessi calcoli della app.
 - `ponte/BATTITO.md` è la procedura che il battito esegue ogni ora.
 
@@ -38,7 +41,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 
 | Percorso | Contenuto | Chi scrive |
 |---|---|---|
-| `sync/vendite`, `sync/meteo`, `sync/contabilita` | Riepiloghi per gli specialisti | Battito |
+| `sync/vendite`, `sync/meteo`, `sync/contabilita`, `sync/stelle` | Riepiloghi per gli specialisti | Battito |
 | `notifiche/<id>` | Avvisi | Battito e Agente 1 |
 | `config/agenti` | Istruzioni migliorate degli specialisti, con lo storico | Agente 1 (`migliora_agente`) |
 | `config/ponte` | Id dell'attività programmata, per il pulsante Aggiorna | Claude |
