@@ -384,8 +384,8 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     turni: [], sync: {}, istruzioni: {}, storia: [], memoria: [], notifiche: [], triggerId: null, contaCollegata: false,
     occupato: false, pensando: false, scrittori: 0, parlando: false,
     ctl: null, macchina: null, voce: false, strumenti: true, avvisiVisti: null, segui: true, attivi: new Set(), nonSalvati: [],
-    downloads: null, backup: null, carteOrdini: {}, statoOrdini: null, ordini: {}, ultimaSveglia: 0, svegliaProgrammata: null,
-    meteoDaMostrare: new Set(), meteoMostrati: new Set()
+    downloads: null, backup: null, carteOrdini: {}, statoOrdini: null, ordini: {}, inArrivo: {}, ultimaSveglia: 0, svegliaProgrammata: null,
+    sveglieFallite: new Set(), meteoMostrati: new Set(), emailMeteo: new Set(), schede: {}
   };
 
   const memo = {
@@ -889,8 +889,16 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
                : "DATI: le richieste di stelle non sono ancora state lette dal battito.";
     }
     if (k === "meteo") {
-      return s ? "PREVISIONI (raccolte " + quando(s.aggiornato) + (s.luogo ? ", " + s.luogo : "") + "):\n" + s.testo + (s.fonti ? "\nFonti: " + [].concat(s.fonti).join(", ") : "")
-               : "DATI: previsioni non ancora raccolte dal battito.";
+      const casa = s ? "PREVISIONI (raccolte " + quando(s.aggiornato) + (s.luogo ? ", " + s.luogo : "") + "):\n" + s.testo + (s.fonti ? "\nFonti: " + [].concat(s.fonti).join(", ") : "")
+                     : "DATI: previsioni non ancora raccolte dal battito.";
+      const recenti = Object.values(S.ordini)
+        .filter((o) => o.agente === "meteo" && o.previsioni && o.previsioni.testo && Date.now() - Date.parse(o.previsioni.aggiornato) < 6 * 3600000 && (!s || chiaveLuogo(o.previsioni.luogo) !== chiaveLuogo(s.luogo)))
+        .map((o) => o.previsioni);
+      const altri = [...new Map(recenti.map((p) => [chiaveLuogo(p.luogo), p])).values()].slice(0, 3)
+        .map((p) => "\n\nVERIFICA DI " + p.luogo.toUpperCase() + " (" + quando(p.aggiornato) + "):\n" + p.testo).join("");
+      const inCorso = Object.values(S.ordini).filter((o) => o.agente === "meteo" && (o.stato === "in attesa" || o.stato === "in esecuzione"))
+        .map((o) => (o.argomenti && o.argomenti.luogo) || "Bergamo");
+      return casa + altri + (inCorso.length ? "\n\nVERIFICHE IN CORSO: " + inCorso.join(", ") + "." : "");
     }
     return "";
   }
@@ -997,6 +1005,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
   // Meteo: una verifica non cambia dati di nessuno, quindi parte sempre subito.
   const REGOLE_METEO = "\n\nPUOI ANCHE AGIRE: se Agente 1 ti chiede una verifica immediata, previsioni aggiornate, un altro luogo o più giorni, oppure se le previsioni qui sotto hanno più di 3 ore, usa verifica_subito. " +
     "Il battito interroga subito 6 modelli meteo indipendenti, li incrocia (ne servono almeno 3) e in 2-4 minuti Thomas vede nell'app la schermata delle previsioni: dillo nella risposta. " +
+    "Se la domanda dice che Thomas vuole la schermata anche per email, metti email true. Una località per ordine: per più località, un ordine per ciascuna. " +
     "Intanto rispondi con le previsioni che hai, dicendo di che ora sono.";
 
   function strumentiMeteo() {
@@ -1008,14 +1017,16 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
         properties: {
           descrizione: { type: "string", description: "cosa verifichi, in una frase per Thomas" },
           luogo: { type: "string", description: "solo il nome della località; se non è detto, Bergamo" },
-          giorni: { type: "integer", description: "quanti giorni da oggi, da 1 a 5; se non è detto, 3" }
+          giorni: { type: "integer", description: "quanti giorni da oggi, da 1 a 5; se non è detto, 3" },
+          email: { type: "boolean", description: "true se Thomas vuole anche la schermata per email" }
         },
         required: ["descrizione"]
       },
       execute: (input) => creaOrdine("meteo", "verifica", input)
     }];
   }
-  const chiaveLuogo = (x) => String(x || "Bergamo").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+  // Come in ponte/meteo.js: provincia o paese dopo la virgola o tra parentesi non contano.
+  const chiaveLuogo = (x) => String(x || "Bergamo").split(/[,(/]/)[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "") || "bergamo";
 
   // Parte da solo se l'ultima richiesta di Thomas chiede una modifica; altrimenti aspetta la sua conferma.
   const CHIEDE_MODIFICA = /\b(segna|segnami|registra|crea|aggiungi|metti|sposta|cancella|modifica|aggiorna|cambia|correggi|scrivi|riapri|prenota|fissa|chiudi|vendut\w*|pers[oa]|chiamat\w*|ho chiamato|richiam\w*|pagament\w*|acconto|saldat\w*|consegnat\w*|avvisat\w*|approvat\w*|rifiutat\w*|nota)\b/i;
@@ -1025,15 +1036,19 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     const argomenti = Object.assign({}, input);
     const descrizione = String(argomenti.descrizione || operazione).slice(0, 300);
     delete argomenti.descrizione;
+    let email = false;
     if (agente === "meteo") {
+      email = argomenti.email === true;
+      delete argomenti.email;
       argomenti.luogo = String(argomenti.luogo || "Bergamo").slice(0, 60);
       argomenti.giorni = Math.min(5, Math.max(1, Math.round(Number(argomenti.giorni) || 3)));
-      // Una verifica già in corso per lo stesso luogo vale anche per questa richiesta.
+      // Una verifica già in corso per lo stesso luogo, con almeno quei giorni, vale anche per questa richiesta.
       const gia = Object.entries(S.ordini).find(([, o]) => o.agente === "meteo" && (o.stato === "in attesa" || o.stato === "in esecuzione") &&
-        chiaveLuogo(o.argomenti && o.argomenti.luogo) === chiaveLuogo(argomenti.luogo) && Date.now() - Date.parse(o.creato) < 15 * 60000);
+        chiaveLuogo(o.argomenti && o.argomenti.luogo) === chiaveLuogo(argomenti.luogo) &&
+        ((o.argomenti && o.argomenti.giorni) || 3) >= argomenti.giorni && Date.now() - Date.parse(o.creato) < 15 * 60000);
       if (gia) {
-        S.meteoDaMostrare.add(gia[0]);
-        return { ordine: gia[0], stato: "c'è già una verifica in corso per " + argomenti.luogo + ": la schermata arriva appena è pronta" };
+        if (email) chiediEmail(gia[0]);
+        return { ordine: gia[0], stato: "c'è già una verifica in corso per " + argomenti.luogo + ": la schermata arriva appena è pronta" + (email ? ", e va anche per email" : "") };
       }
     }
     const id = "o" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1046,17 +1061,27 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     if (operazione === "crea_preventivo" || (operazione === "appuntamento" && (argomenti.azione || "crea") === "crea")) {
       ordine.nuovoId = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     }
-    await S.db.doc("ordini/" + id).set(ordine);
-    S.ordini[id] = ordine;
-    cartaOrdine(id, ordine);
-    if (ordine.stato === "in attesa") svegliaBattito();
-    if (agente === "meteo") {
-      S.meteoDaMostrare.add(id);
-      return { ordine: id, stato: "in coda: il battito interroga subito 6 modelli meteo e in 2-4 minuti Thomas vede la schermata delle previsioni" };
+    // Registrato prima di scrivere: due richieste uguali nello stesso giro non creano due ordini.
+    S.inArrivo[id] = S.ordini[id] = ordine;
+    try {
+      await S.db.doc("ordini/" + id).set(ordine);
+    } catch (e) {
+      delete S.inArrivo[id]; delete S.ordini[id];
+      throw e;
     }
-    return ordine.stato === "in attesa"
-      ? { ordine: id, stato: "in coda: il battito lo applica nell'app vendite entro un paio di minuti" }
-      : { ordine: id, stato: "aspetta la conferma di Thomas nella chat" };
+    if (email) chiediEmail(id);
+    cartaOrdine(id, ordine);
+    if (ordine.stato !== "in attesa") return { ordine: id, stato: "aspetta la conferma di Thomas nella chat" };
+    const sveglia = await svegliaBattito();
+    if (!sveglia.ok) {
+      S.sveglieFallite.add(id);
+      cartaOrdine(id, ordine);
+      toast("Battito non svegliato", sveglia.motivo);
+      return { ordine: id, stato: "in coda, ma il battito non si è svegliato (" + sveglia.motivo + "): l'ordine parte al prossimo giro orario, dalle 8 alle 21. Dillo a Thomas." };
+    }
+    return agente === "meteo"
+      ? { ordine: id, stato: "in coda: il battito interroga subito 6 modelli meteo e in 2-4 minuti Thomas vede la schermata delle previsioni" + (email ? ", che gli arriva anche per email" : "") }
+      : { ordine: id, stato: "in coda: il battito lo applica nell'app vendite entro un paio di minuti" };
   }
 
   const ETICHETTA_ORDINE = { "da confermare": "da confermare", "in attesa": "in coda", "in esecuzione": "in corso", "eseguito": "fatto", "errore": "non riuscito", "annullato": "annullato" };
@@ -1081,7 +1106,8 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     c.li.classList.toggle("annullato", stato === "annullato");
     c.et.textContent = "→ " + (SQUADRA[o.agente] ? SQUADRA[o.agente].nome : o.agente) + " · " + ETICHETTA_ORDINE[stato];
     c.p.textContent = o.descrizione || o.operazione;
-    const attesa = o.agente === "meteo" ? "Il battito incrocia i modelli meteo: la schermata arriva in 2-4 minuti." : "Il battito lo applica nell'app entro un paio di minuti.";
+    const attesa = stato === "in attesa" && S.sveglieFallite.has(id) ? "Il battito non si è svegliato: l'ordine parte al prossimo giro orario, dalle 8 alle 21."
+      : o.agente === "meteo" ? "Il battito incrocia i modelli meteo: la schermata arriva in 2-4 minuti." : "Il battito lo applica nell'app entro un paio di minuti.";
     c.sm.textContent = stato === "eseguito" || stato === "errore" ? (o.esito || "") : stato === "in attesa" || stato === "in esecuzione" ? attesa : stato === "da confermare" ? "Agente 1 aspetta il tuo sì prima di cambiare l'app." : "";
     c.azioni.textContent = "";
     const pulsante = (testo, fn, principale) => {
@@ -1091,20 +1117,27 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
       b.addEventListener("click", async () => { b.disabled = true; try { await fn(); } catch (e) { toast("Non riuscito", "Riprova tra un attimo."); b.disabled = false; } });
       c.azioni.appendChild(b);
     };
-    if (stato === "da confermare") pulsante("Conferma", async () => { await S.db.doc("ordini/" + id).update({ stato: "in attesa" }); svegliaBattito(); }, true);
+    if (stato === "da confermare") pulsante("Conferma", async () => {
+      await S.db.doc("ordini/" + id).update({ stato: "in attesa" });
+      const sveglia = await svegliaBattito();
+      if (!sveglia.ok) { S.sveglieFallite.add(id); toast("Battito non svegliato", sveglia.motivo); }
+    }, true);
     if (stato === "da confermare" || stato === "in attesa") pulsante("Annulla", () => S.db.doc("ordini/" + id).update({ stato: "annullato" }));
   }
 
   // Sveglia il battito senza testo aggiuntivo; se è appena partito, riprova tra un minuto per gli ordini arrivati dopo.
+  // Dice com'è andata: { ok: true } oppure { ok: false, motivo }.
   function svegliaBattito() {
-    if (!S.mcp || !S.triggerId) return;
+    if (!S.mcp) return Promise.resolve({ ok: false, motivo: "in questa vista non posso usare Claude Code Remote" });
+    if (!S.triggerId) return Promise.resolve({ ok: false, motivo: "il battito non è configurato" });
     const ora = Date.now();
     if (ora - S.ultimaSveglia < 60000) {
       if (!S.svegliaProgrammata) S.svegliaProgrammata = setTimeout(() => { S.svegliaProgrammata = null; svegliaBattito(); }, 60000 - (ora - S.ultimaSveglia) + 1000);
-      return;
+      return Promise.resolve({ ok: true });
     }
     S.ultimaSveglia = ora;
-    S.mcp.callTool("Claude Code Remote", "fire_trigger", { trigger_id: S.triggerId }).catch(() => { /* il battito orario lo prenderà comunque */ });
+    return S.mcp.callTool("Claude Code Remote", "fire_trigger", { trigger_id: S.triggerId })
+      .then(() => ({ ok: true }), (e) => { S.ultimaSveglia = 0; return { ok: false, motivo: erroreConnettore(e, "Claude Code Remote") }; });
   }
 
   /* ---------- Schermata del meteo ---------- */
@@ -1126,35 +1159,71 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
   const gradiMeteo = (x) => (typeof x === "number" ? Math.round(x) + "°" : "–");
   const fontiMeteo = (n) => n + (n === 1 ? " fonte" : " fonti");
 
+  // Memoria di questo dispositivo: quali verifiche ha già mostrato e per quali Thomas ha chiesto l'email.
+  // Ogni telefono o computer mostra la schermata per conto suo; l'email parte solo da quello che l'ha chiesta.
+  function listaLocale(chiave) { try { return JSON.parse(memo.get(chiave) || "[]"); } catch (e) { return []; } }
+  function aggiungiLocale(chiave, id) { memo.set(chiave, JSON.stringify(listaLocale(chiave).filter((x) => x !== id).concat(id).slice(-40))); }
+  function chiediEmail(id) { S.emailMeteo.add(id); aggiungiLocale("agente1-meteo-email", id); }
+  function emailChiesta(id) { return S.emailMeteo.has(id) || listaLocale("agente1-meteo-email").includes(id); }
+  function emailFatta(id) { S.emailMeteo.delete(id); memo.set("agente1-meteo-email", JSON.stringify(listaLocale("agente1-meteo-email").filter((x) => x !== id))); }
+
+  // Una schermata per ogni verifica (luogo e ora): più ordini soddisfatti dalla stessa verifica la condividono.
+  function schedaPer(p) {
+    const k = chiaveLuogo(p.luogo) + "|" + p.aggiornato;
+    if (!S.schede[k]) S.schede[k] = schermataMeteo(p).catch((e) => { delete S.schede[k]; throw e; });
+    return S.schede[k];
+  }
+
+  // Verifiche finite: la schermata compare una volta su questo dispositivo, anche se l'app era chiusa (entro 3 ore).
   function mostraMeteoPronte() {
-    const m = S.sync.meteo;
-    const pronti = (m && m.verifica && m.verifica.ordini) || [];
-    for (const id of [...S.meteoDaMostrare]) {
-      if (S.meteoMostrati.has(id)) { S.meteoDaMostrare.delete(id); continue; }
-      const o = S.ordini[id];
-      if (!o || (o.stato !== "eseguito" && o.stato !== "errore") || !pronti.includes(id)) continue;
-      S.meteoDaMostrare.delete(id);
+    if (!S.avviato) return;
+    const visti = new Set(listaLocale("agente1-meteo-visti"));
+    const pronti = Object.entries(S.ordini)
+      .filter(([id, o]) => o.agente === "meteo" && (o.stato === "eseguito" || o.stato === "errore") && o.previsioni && o.previsioni.verifica &&
+        !S.meteoMostrati.has(id) && !visti.has(id) && Date.now() - Date.parse(o.eseguito || o.creato) < 3 * 3600000)
+      .sort(([, a], [, b]) => String(a.eseguito || a.creato).localeCompare(String(b.eseguito || b.creato)));
+    for (const [id, o] of pronti) {
       S.meteoMostrati.add(id);
-      schermataMeteo().catch(() => { /* la carta dell'ordine dice già com'è andata */ });
-      if (S.db && !o.mostrato) S.db.doc("ordini/" + id).update({ mostrato: true }).catch(() => {});
+      aggiungiLocale("agente1-meteo-visti", id);
+      schedaPer(o.previsioni)
+        .then((scheda) => { if (emailChiesta(id)) return inviaSchermata(scheda).then(() => emailFatta(id)); })
+        .catch((e) => toast("Meteo", (e && e.message) || "Schermata non riuscita."));
     }
   }
 
+  // Le previsioni incrociate più recenti: quelle di casa (sync/meteo) o di una verifica finita, per luogo se indicato.
+  function ultimePrevisioni(luogo) {
+    const tutte = [S.sync.meteo].concat(Object.values(S.ordini).filter((o) => o.agente === "meteo" && o.previsioni).map((o) => o.previsioni))
+      .filter((p) => p && p.verifica && (p.verifica.giorni || []).length && (!luogo || chiaveLuogo(p.luogo) === chiaveLuogo(luogo)));
+    return tutte.sort((a, b) => String(b.aggiornato).localeCompare(String(a.aggiornato)))[0] || null;
+  }
+
   async function mostraMeteo(input, ctx) {
-    const m = S.sync.meteo;
-    if (!m || !m.verifica || !(m.verifica.giorni || []).length) throw new Error("Non ci sono ancora previsioni incrociate da mostrare: chiedi a Meteo una verifica subito.");
-    const scheda = await schermataMeteo();
-    const r = { mostrata: true, luogo: m.luogo, aggiornate: quando(m.aggiornato), verificate_su: fontiMeteo(m.verifica.nFonti) };
-    if (input && input.email) {
-      await autorizza(/\b(e-?mail|mail|posta)\b/i, "Agente 1 vuole mandarti la schermata del meteo per email.", ctx && ctx.signal);
+    const luogo = input && input.luogo ? String(input.luogo) : null;
+    const email = !!(input && input.email);
+    if (email) await autorizza(/\b(e-?mail|mail|posta)\b/i, "Agente 1 vuole mandarti la schermata del meteo per email.", ctx && ctx.signal);
+    // Se una verifica è ancora in corso, la schermata nuova arriva da sola: niente previsioni vecchie.
+    const inCorso = Object.entries(S.ordini).find(([, o]) => o.agente === "meteo" && (o.stato === "in attesa" || o.stato === "in esecuzione") &&
+      (!luogo || chiaveLuogo(o.argomenti && o.argomenti.luogo) === chiaveLuogo(luogo)));
+    if (inCorso) {
+      if (email) chiediEmail(inCorso[0]);
+      return { in_corso: true, stato: "la verifica per " + ((inCorso[1].argomenti && inCorso[1].argomenti.luogo) || "Bergamo") + " è ancora in corso: la schermata compare appena è pronta" + (email ? " e parte anche per email" : "") };
+    }
+    const p = ultimePrevisioni(luogo);
+    if (!p) throw new Error("Non ci sono ancora previsioni incrociate" + (luogo ? " per " + luogo : "") + " da mostrare: chiedi a Meteo una verifica subito.");
+    // Per l'email basta la schermata già in chat; per rivederla se ne disegna una nuova in fondo.
+    const k = chiaveLuogo(p.luogo) + "|" + p.aggiornato;
+    if (!email || !S.schede[k]) delete S.schede[k];
+    const scheda = await schedaPer(p);
+    const r = { mostrata: true, luogo: p.luogo, aggiornate: quando(p.aggiornato), verificate_su: fontiMeteo(p.verifica.nFonti) };
+    if (email) {
       await inviaSchermata(scheda);
       r.email = "inviata a " + S.email;
     }
     return r;
   }
 
-  async function schermataMeteo() {
-    const m = S.sync.meteo;
+  async function schermataMeteo(m) {
     const canvas = await disegnaMeteo(m);
     const li = document.createElement("li");
     li.className = "tx di-meteo";
@@ -1165,7 +1234,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     canvas.setAttribute("aria-label", testoMeteo(m));
     const azioni = document.createElement("div");
     azioni.className = "azioni";
-    const scheda = { canvas, meteo: m, nome: "meteo-" + chiaveLuogo(m.luogo) + "-" + String(m.aggiornato || "").slice(0, 10) + ".png" };
+    const scheda = { canvas, li, meteo: m, nome: "meteo-" + chiaveLuogo(m.luogo) + "-" + String(m.aggiornato || "").slice(0, 10) + ".png" };
     const pulsante = (testo, fn) => {
       const b = document.createElement("button");
       b.type = "button"; b.className = "pill"; b.textContent = testo;
@@ -1360,7 +1429,11 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     const lm = c.measureText(marchio.toUpperCase()).width + 24;
     chip(marchio, W - PAD - lm, y, okColore);
     y += 34;
-    font(600, 28, TIT); c.save(); luce("rgba(143,107,255,.8)", 16); scrivi(m.luogo || "", PAD, y, "#ffffff"); c.restore();
+    // Il nome del luogo si rimpicciolisce finché sta nella larghezza; se non basta, viene accorciato.
+    let titolo = String(m.luogo || ""), corpo = 28;
+    for (; corpo > 18; corpo--) { font(600, corpo, TIT); if (c.measureText(titolo).width <= W - PAD * 2) break; }
+    while (titolo.length > 4 && c.measureText(titolo).width > W - PAD * 2) titolo = titolo.slice(0, -2).trim() + "…";
+    c.save(); luce("rgba(143,107,255,.8)", 16); scrivi(titolo, PAD, y, "#ffffff"); c.restore();
     y += 20;
     font(500, 12, TES);
     const agg = new Date(m.aggiornato);
@@ -1371,7 +1444,10 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     const g0 = giorni[0];
     const fasce = ["mattina", "pomeriggio", "sera"].filter((f) => g0.fasce && g0.fasce[f]);
     const fontiG0 = g0.fonti || [];
-    const hHero = 176 + (fasce.length ? 74 : 0) + (fontiG0.length ? 78 : 0);
+    // Con il vento la riga in più spinge giù l'etichetta dell'accordo, che altrimenti ci finirebbe sopra.
+    const conVento = typeof g0.vento === "number" && g0.vento >= 20;
+    const base = conVento ? 198 : 176;
+    const hHero = base + (fasce.length ? 74 : 0) + (fontiG0.length ? 78 : 0);
     const xh = PAD, wh = W - PAD * 2;
     pannello(xh, y, wh, hHero, "rgba(143,107,255,.38)");
     c.save(); tondo(xh, y, wh, hHero, 16); c.clip();
@@ -1391,10 +1467,10 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     if (g0.pioggia !== null && g0.pioggia !== undefined) riga.push("pioggia " + g0.pioggia + "%");
     if (g0.mm >= 0.5) riga.push(String(g0.mm).replace(".", ",") + " mm");
     if (riga.length) { goccia(xt + 4, y + 135, 4, BLU); scrivi(riga.join(" · "), xt + 14, y + 139, TESTO); }
-    if (typeof g0.vento === "number" && g0.vento >= 20) { font(500, 12, TES); scrivi("vento fino a " + g0.vento + " km/h", xt, y + 157, TENUE); }
+    if (conVento) { font(500, 12, TES); scrivi("vento fino a " + g0.vento + " km/h", xt, y + 158, TENUE); }
     const acc0 = ACCORDO_METEO[g0.accordo] || ACCORDO_METEO.alto;
-    chip(acc0[0], xh + 16, y + 160, acc0[1]);
-    let yh = y + 176;
+    chip(acc0[0], xh + 16, y + base - 16, acc0[1]);
+    let yh = y + base;
     const linea = (yy) => { c.save(); const g = c.createLinearGradient(xh, 0, xh + wh, 0); g.addColorStop(0, "rgba(132,150,255,0)"); g.addColorStop(.5, "rgba(132,150,255,.28)"); g.addColorStop(1, "rgba(132,150,255,0)"); c.strokeStyle = g; c.lineWidth = 1; c.beginPath(); c.moveTo(xh + 12, yy); c.lineTo(xh + wh - 12, yy); c.stroke(); c.restore(); };
     if (fasce.length) {
       linea(yh);
@@ -1615,8 +1691,8 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     });
     t.push({
       name: "mostra_meteo",
-      description: "Mostra a Thomas nella chat la schermata (un'immagine) delle ultime previsioni incrociate del reparto Meteo. Con email true gliela manda anche per email, solo se lo chiede.",
-      inputSchema: { type: "object", properties: { email: { type: "boolean" } } },
+      description: "Mostra a Thomas nella chat la schermata (un'immagine) delle ultime previsioni incrociate del reparto Meteo, di casa o del luogo indicato. Con email true gliela manda anche per email, solo se lo chiede. Se una verifica è in corso, la schermata arriva da sola quando è pronta.",
+      inputSchema: { type: "object", properties: { luogo: { type: "string" }, email: { type: "boolean" } } },
       execute: mostraMeteo
     });
     t.push({
@@ -1662,7 +1738,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
       "- Per numeri, clienti, impegni, soldi o tempo chiedi allo specialista giusto. Per un riepilogo della giornata chiedi a più specialisti e incrocia le risposte.\n" +
       "- Dai sempre la tua opinione: cosa è urgente, cosa può aspettare, una cosa concreta da fare adesso.\n" +
       "- La squadra lavora insieme: se Thomas chiede di registrare o cambiare qualcosa nell'app vendite (preventivi, chiamate, richiami, test drive, appuntamenti, vendite, persi, pagamenti, saldi, finanziamenti), passa l'ordine a Vendite con chiedi_vendite, scrivendo chiaramente cosa cambiare. Vendite lo mette in coda e il battito lo applica nell'app entro un paio di minuti: diglielo. Se Vendite non crea l'ordine, spiega perché.\n" +
-      "- Meteo: se Thomas vuole una verifica aggiornata, il meteo di un altro luogo o di più giorni, o se le previsioni hanno più di 3 ore, chiedi a Meteo con chiedi_meteo di fare subito una verifica. Il battito incrocia almeno 3 modelli meteo indipendenti e in 2-4 minuti nell'app compare la schermata delle previsioni: diglielo. Per mostrargli subito la schermata delle previsioni già verificate usa mostra_meteo; con email true gliela manda anche per email, solo se lo chiede.\n" +
+      "- Meteo: se Thomas vuole una verifica aggiornata, il meteo di un altro luogo o di più giorni, o se le previsioni hanno più di 3 ore, chiedi a Meteo con chiedi_meteo di fare subito una verifica. Il battito incrocia almeno 3 modelli meteo indipendenti e in 2-4 minuti nell'app compare la schermata delle previsioni: diglielo. Se vuole la schermata anche per email, dillo a Meteo nella domanda. Per mostrargli subito la schermata delle previsioni già verificate usa mostra_meteo; con email true gliela manda anche per email, solo se lo chiede.\n" +
       "- Contabilità e Stelle per ora leggono soltanto: le stelle si confermano dall'app Un passo alla volta.\n" +
       "- Parla in italiano semplice, frasi brevi, come un collaboratore fidato: la risposta può essere letta ad alta voce. Niente tabelle, al massimo un elenco corto.\n" +
       "- Non inventare cifre, nomi o date. Se un dato manca o è vecchio, dillo.\n" +
@@ -1807,7 +1883,6 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
       for (const d of snap.docs) S.sync[d.id] = d.data();
       disegnaSquadra();
       disegnaTelemetria();
-      mostraMeteoPronte();
     }, () => { /* i dati restano quelli già mostrati */ });
 
     db.collection("notifiche").orderBy("ora", "desc").limit(40).onSnapshot((snap) => {
@@ -1838,9 +1913,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
         const o = d.data();
         S.statoOrdini[d.id] = o.stato;
         S.ordini[d.id] = o;
-        // Verifica meteo finita: la schermata compare una volta, anche se l'app era chiusa (entro 3 ore).
-        if (o.agente === "meteo" && (o.stato === "eseguito" || o.stato === "errore") && !o.mostrato &&
-            (S.carteOrdini[d.id] || S.meteoDaMostrare.has(d.id) || Date.now() - Date.parse(o.eseguito || o.creato) < 3 * 3600000)) S.meteoDaMostrare.add(d.id);
+        delete S.inArrivo[d.id];
         // Alla riapertura dell'app ritornano le carte degli ordini ancora aperti, così si possono confermare o annullare.
         const aperto = o.stato === "da confermare" || o.stato === "in attesa" || o.stato === "in esecuzione";
         if (S.carteOrdini[d.id] || (!prima && aperto && Date.now() - Date.parse(o.creato) < 2 * 86400000)) cartaOrdine(d.id, o);
@@ -1850,6 +1923,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
           if (o.stato === "errore") toast(chi + ": non riuscito", o.esito || o.descrizione || "");
         }
       }
+      for (const [id, o] of Object.entries(S.inArrivo)) if (!S.ordini[id]) S.ordini[id] = o;
       mostraMeteoPronte();
     }, () => {});
 
@@ -1901,12 +1975,14 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
       try { const lim = await sample.limits(); S.strumenti = !!lim.tools; } catch (e) { S.strumenti = false; }
     }
     if (user) await collegaUtente();
-    if (db) collegaDb();
-    disegnaSquadra();
 
+    // Prima la cronologia, poi il database: la cronologia svuota la chat, e cancellerebbe le carte degli ordini
+    // e le schermate del meteo arrivate nel frattempo.
     S.turni = await caricaChat();
     $("chat").textContent = "";
     for (const t of S.turni.slice(-12)) trasmissione(t.role === "user" ? "da-te" : "da-agente", t.content, t.ora || null);
+    if (db) collegaDb();
+    disegnaSquadra();
     $("input").disabled = !sample;
     $("btnInvia").disabled = !sample;
     if (!sample) {
@@ -1917,6 +1993,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     if (!mcp) $("btnAggiorna").disabled = true;
     S.avviato = true;
     proponiBackup();
+    mostraMeteoPronte();
   }
 
   /* ---------- Eventi ---------- */
