@@ -18,14 +18,16 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                     │  email (Gmail, solo a te) · avvisi · memoria           │
                     └───────────────────────▲────────────────────────────────┘
                                             │ scrive ogni ora
-                    Battito (attività programmata Claude, 8–21)
-                     ├─ esegue gli ordini di Agente 1 nell'app Andamento vendite
-                     ├─ legge l'artefatto Andamento vendite
-                     ├─ legge le stelle in attesa di Un passo alla volta (solo lettura)
+                    Turno di Agente 1 (attività programmata Claude, ogni ora alle :07, giorno e notte)
+                     ├─ Reparto Vendite: Ordini (applica i tuoi ordini all'app), Riepilogo,
+                     │   Calendario (appuntamenti e test drive nel tuo Google Calendar), Controllo (dati a posto)
+                     ├─ Reparto Contabilità: Conti (script Google), Posta (fatture arrivate per email)
+                     ├─ Reparto Meteo: Verifiche (fino a 8 fonti meteo)
+                     ├─ Reparto Stelle: Sentinella (stelle e assistenza di Un passo alla volta)
+                     ├─ Compiti che dai ad Agente 1 (config/compiti)
+                     └─ Rapporto di Agente 1: nell'app, per email e sul telefono (di notte in silenzio, al mattino tutto)
                     Sentinella stelle (attività programmata Claude, alle :37, 8–24)
                      └─ ricontrolla stelle e segnalazioni di assistenza a metà ora
-                     ├─ incrocia fino a 8 fonti meteo (Open-Meteo, MET Norway, DWD, WWO)
-                     └─ prova lo script Google della contabilità
 ```
 
 ## Perché è fatto così
@@ -44,7 +46,11 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 - `ponte/stelle.js` legge le richieste di stelle in attesa e le segnalazioni di assistenza nuove di "Un passo alla volta", crea un avviso per quelle nuove e prepara il testo della notifica. Lo usano il battito (alle :07) e la **Sentinella stelle** (alle :37): le stelle vengono controllate ogni mezz'ora, e nel nodo Stelle dell'app si vede l'ora dell'ultimo controllo. Le stelle si confermano solo dall'app, con il pulsante 🔒. Le segnalazioni di assistenza arrivano anche subito per email: quando lei preme "Invia a Thomas", l'app manda l'email da sola se può, altrimenti le apre l'email già scritta per Thomas da inviare con un tocco.
 - `ponte/contabilita.js` legge le fatture dallo script Google della app di contabilità, con gli stessi calcoli della app.
 - `ponte/backup.js` prepara ogni giorno il backup di tutto (vendite, stelle, Agente 1) in `backup/indice` e `backup/parte-<n>`, sovrascrivendo quello del giorno prima. Il codice dello script della contabilità non viene copiato. Alla prima apertura del giorno l'app propone **Salva sul telefono**: un tocco salva `agente1-backup.json`, perché una pagina web non può scrivere sul telefono senza conferma.
-- `ponte/BATTITO.md` è la procedura che il battito esegue ogni ora.
+- `ponte/calendario.js` (addetto Calendario) prepara il piano per Google Calendar: crea, sposta o toglie gli eventi degli appuntamenti e dei test drive dell'app vendite, adotta quelli già presenti alla stessa ora con lo stesso nome e tiene la mappa in `calendario/<chiave>`. Tocca solo gli eventi della mappa.
+- `ponte/posta.js` (addetto Posta) trova nelle email degli ultimi 3 giorni le fatture arrivate (SdI tramite TeamSystem, commercialista, committenti), senza ricevute di acquisti e pubblicità, e non le ripete (`posta/<idMessaggio>`).
+- `ponte/controllo.js` (addetto Controllo) segnala solo le novità da sistemare nell'app vendite: appuntamenti e test drive passati non segnati, preventivi senza richiamo, clienti senza telefono, vendite senza margine, finanziamenti fermi o rifiutati.
+- `ponte/rapporto.js` scrive il rapporto di Agente 1 ("Ho parlato con il Reparto Contabilità e mi ha detto che..."), l'email per te e il testo della notifica; di notte accumula e al primo turno del mattino racconta tutto.
+- `ponte/TURNO.md` è la procedura che il turno esegue ogni ora. Il pulsante Aggiorna, gli ordini e i compiti lo fanno partire subito.
 
 ## Database di Agente 1
 
@@ -54,6 +60,10 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 | `notifiche/<id>` | Avvisi | Battito e Agente 1 |
 | `ordini/<id>` | Cose da fare: modifiche all'app vendite o verifiche meteo, `{agente, operazione, argomenti, descrizione, stato, esito}` | Agente 1 le crea, il battito le esegue |
 | `config/agenti` | Istruzioni migliorate degli specialisti, con lo storico | Agente 1 (`migliora_agente`) e la pagina Squadra |
+| `config/compiti` | Compiti dati ai reparti: una volta o a ogni turno, con l'ultimo esito | Agente 1 (`assegna_compito`), la pagina Squadra e il turno |
+| `config/proprietario` | Nome ed email di Thomas, a cui il turno manda i rapporti | Claude |
+| `sync/turno`, `sync/controllo` | Ultimo turno, addetti e novità della notte; esito del controllo vendite | Turno |
+| `calendario/<chiave>`, `posta/<id>` | Mappa appuntamento → evento di Google Calendar; email già viste | Turno |
 | `config/squadra` | Agenti creati da te e specialisti tolti dalla squadra | Pagina Squadra |
 | `config/ponte` | Id dell'attività programmata, per il pulsante Aggiorna | Claude |
 | `data/users/<tu>/chat`, `.../memoria` | Conversazione e cose da ricordare, private | Agente 1 |
