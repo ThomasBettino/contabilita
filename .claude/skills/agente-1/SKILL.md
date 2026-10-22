@@ -25,10 +25,18 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 | `sync/stelle` | `{aggiornato, controllato, fonte, link, nome, inAttesa, stelle, assistenza, ids, idsAssistenza, testo}` scritto da `stelle.js`; `ids` sono le richieste già viste, `controllato` l'ora dell'ultimo controllo |
 | `notifiche/<id>` | `{titolo, testo, ora, fonte, letta, link?, richieste?}`; id stabili per non ripetere gli avvisi; gli avvisi delle stelle elencano in `richieste` gli id che coprono |
 | `ordini/<id>` | `{agente, operazione, argomenti, descrizione, stato, creato, richiesta, nuovoId?, esito?, eseguito?}`. Stati: `da confermare` → `in attesa` → `in esecuzione` → `eseguito`/`errore`, oppure `annullato`. Li crea lo specialista Vendite con i suoi 9 strumenti; partono subito solo se l'ultima richiesta del proprietario chiede una modifica, altrimenti aspettano Conferma. Lo specialista Meteo crea `{agente:"meteo", operazione:"verifica", argomenti:{luogo, giorni}}` con `verifica_subito`, sempre in attesa; il battito li esegue per primi (passo 1b) e scrive nell'esito anche `previsioni` (stessa forma di `sync/meteo`, per il luogo dell'ordine). L'app disegna la schermata da `ordine.previsioni`, una volta per dispositivo (`localStorage` `agente1-meteo-visti`); l'email parte solo dal dispositivo che l'ha chiesta (`agente1-meteo-email`), mai dal database |
-| `config/agenti` | `{istruzioni:{vendite,agenda,contabilita,meteo}, storia[]}` scritti da `migliora_agente` |
+| `config/agenti` | `{istruzioni:{vendite,agenda,contabilita,meteo,stelle}, storia[]}` scritti da `migliora_agente` e dalla pagina Squadra; `storia` vale anche per gli agenti creati dal proprietario |
+| `config/squadra` | `{spenti:[chiavi], agenti:{<id>:{nome, glifo, ruolo, istruzioni, fonti[], creato}}, aggiornato}` scritto dalla pagina Squadra. `id` = `a_<nome>_<4 caratteri>`; `fonti` tra vendite, agenda, contabilita, meteo, stelle, memoria |
 | `config/ponte` | `{triggerId}` |
 | `backup/indice`, `backup/parte-<n>` | backup giornaliero di tutto, scritto da `backup.js` al primo battito del giorno e sovrascritto ogni giorno; l'app lo ricompone e lo salva sul telefono con `downloads` |
 | `data/users/<id>/chat`, `/memoria` | privati del proprietario |
+
+## Interfaccia (laboratorio)
+
+- **Testa olografica:** SVG in `#orb > #robot`, script `window.Robot` con `stato(riposo|pensa|scrive|parla)`, `carattere(ch)` (chiamato dalla macchina da scrivere a ogni lettera), `apri(0..1)` (confini di parola della voce) e `guarda(x, y)`. La pagina la chiama sempre attraverso `robot(metodo, …)`, che non fa niente se manca.
+- **Lavagna:** `#flusso > #chat`, stesse trasmissioni `.tx` di prima. Mentre scrive, `#raggio` (SVG) collega la bocca al cursore: si mostra e nasconde con l'attributo `hidden` (`toggleAttribute`), perché la proprietà `hidden` non esiste sugli elementi SVG.
+- **Viste:** schede Laboratorio e Squadra (`#vistaLab`, `#vistaSquadra`); `#squadra` nell'indirizzo apre la Squadra.
+- **Squadra dinamica:** `inSquadra()` = specialisti di base non in `spenti` più quelli creati, al massimo `tools.maxCount − 5` (Agente 1 ha 5 strumenti suoi). Per ognuno Agente 1 riceve `chiedi_<chiave>`; `migliora_agente` accetta le stesse chiavi; le regole del capo elencano la squadra attuale e chi è fuori. Gli agenti creati rispondono con `promptPersonalizzato` (istruzioni, ruolo, dati delle fonti scelte), senza strumenti. Il pulsante "Progettalo con Agente 1" usa `sample.json` per proporre nome, icona, ruolo, fonti e istruzioni.
 
 ## Come modificare l'app
 

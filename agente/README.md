@@ -1,6 +1,8 @@
 # Agente 1
 
-Agente 1 è il capo di una squadra di agenti IA. Parli solo con lui, in una chat scritta o a voce. Lui consulta gli specialisti, incrocia le risposte e ti dice cosa conta.
+Agente 1 è il capo di una squadra di agenti IA. Parli solo con lui, scrivendo o a voce. Lui consulta gli specialisti, incrocia le risposte e ti dice cosa conta.
+
+L'app è un laboratorio olografico blu: al centro la testa di Agente 1, che muove la bocca mentre scrive e mentre parla; sotto la squadra collegata alla testa; poi la **lavagna** su cui scrive, con un raggio di luce dalla bocca alla riga che sta scrivendo. Ai lati della testa ci sono i numeri del mese. La scheda **Squadra** elenca gli agenti: lì ne aggiungi uno nuovo (lo descrivi a parole e Agente 1 lo progetta), cambi le istruzioni di ognuno o lo togli dalla squadra.
 
 **App:** https://claude.ai/artifact/QKUvJ2gwq8cVGTnkCukMnc
 
@@ -11,7 +13,8 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                     │   ├─ Agenda       Google Calendar in diretta + agenda  │
                     │   ├─ Contabilità  legge sync/contabilita               │
                     │   ├─ Meteo        legge sync/meteo, chiede verifiche   │
-                    │   └─ Stelle       legge sync/stelle                    │
+                    │   ├─ Stelle       legge sync/stelle                    │
+                    │   └─ Agenti tuoi  creati dalla pagina Squadra          │
                     │  email (Gmail, solo a te) · avvisi · memoria           │
                     └───────────────────────▲────────────────────────────────┘
                                             │ scrive ogni ora
@@ -50,7 +53,8 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 | `sync/vendite`, `sync/meteo`, `sync/contabilita`, `sync/stelle` | Riepiloghi per gli specialisti | Battito |
 | `notifiche/<id>` | Avvisi | Battito e Agente 1 |
 | `ordini/<id>` | Cose da fare: modifiche all'app vendite o verifiche meteo, `{agente, operazione, argomenti, descrizione, stato, esito}` | Agente 1 le crea, il battito le esegue |
-| `config/agenti` | Istruzioni migliorate degli specialisti, con lo storico | Agente 1 (`migliora_agente`) |
+| `config/agenti` | Istruzioni migliorate degli specialisti, con lo storico | Agente 1 (`migliora_agente`) e la pagina Squadra |
+| `config/squadra` | Agenti creati da te e specialisti tolti dalla squadra | Pagina Squadra |
 | `config/ponte` | Id dell'attività programmata, per il pulsante Aggiorna | Claude |
 | `data/users/<tu>/chat`, `.../memoria` | Conversazione e cose da ricordare, private | Agente 1 |
 
