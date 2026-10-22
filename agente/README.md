@@ -63,9 +63,11 @@ Il battito esegue `contabilita.js` con `NODE_USE_ENV_PROXY=1`: senza, il fetch d
 
 ## Meteo: verifica subito e schermata
 
-Chiedi ad Agente 1 per esempio "fai verificare il meteo di domani". Agente 1 lo chiede allo specialista Meteo, che passa un ordine di verifica al battito e lo sveglia subito. Il battito interroga 6 modelli meteo di centri diversi e li incrocia: la previsione conta come verificata solo se almeno 3 fonti rispondono. In 2-4 minuti nella chat compare la **schermata** delle previsioni: il giorno in grande con mattina, pomeriggio e sera, gli incroci fonte per fonte, i giorni dopo e dove le fonti non concordano. Sotto ci sono **Salva immagine** e **Mandamela per email**. Puoi anche chiedere "fammi vedere la schermata del meteo" per le ultime previsioni già verificate.
+Chiedi ad Agente 1 per esempio "fai verificare il meteo di domani" o "com'è il meteo a Riva del Garda per 5 giorni, mandamelo per email". Agente 1 lo chiede allo specialista Meteo, che passa un ordine di verifica al battito e lo sveglia subito. Il battito interroga i modelli meteo di centri diversi e li incrocia: la previsione conta come verificata solo se almeno 3 fonti rispondono. In 2-4 minuti nella chat compare la **schermata** delle previsioni: il giorno in grande con mattina, pomeriggio e sera, gli incroci fonte per fonte, i giorni dopo e dove le fonti non concordano. Sotto ci sono **Salva immagine** e **Mandamela per email**; se l'avevi chiesta per email, parte da sola dal telefono da cui l'hai chiesta. Puoi anche chiedere "fammi vedere la schermata del meteo" per le ultime previsioni già verificate.
 
-Il battito deve poter raggiungere `api.open-meteo.com`, `geocoding-api.open-meteo.com` e `api.met.no`: vanno tra i domini consentiti dell'ambiente cloud "Assistente AI", come quelli della contabilità.
+Ogni luogo ha la sua verifica, con i giorni e le ore del posto. Le previsioni viaggiano dentro l'ordine, quindi verificare un'altra città non cambia il meteo di Bergamo che usa la squadra. Se l'app era chiusa, la schermata compare alla riapertura, entro 3 ore, una volta su ogni dispositivo.
+
+Il battito deve poter raggiungere `api.open-meteo.com`, `geocoding-api.open-meteo.com` e `api.met.no`: vanno tra i domini consentiti dell'ambiente cloud "Assistente AI", come quelli della contabilità. Open-Meteo è gratuito con un limite giornaliero per indirizzo, e dal cloud l'indirizzo è condiviso: nel pomeriggio spesso risponde "limite superato". In quel caso la verifica ha meno di 3 fonti e lo dice.
 
 ## Limiti da conoscere
 
