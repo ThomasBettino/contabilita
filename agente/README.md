@@ -19,7 +19,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                      ├─ esegue gli ordini di Agente 1 nell'app Andamento vendite
                      ├─ legge l'artefatto Andamento vendite
                      ├─ legge le stelle in attesa di Un passo alla volta (solo lettura)
-                     ├─ incrocia 6 modelli meteo (Open-Meteo, MET Norway)
+                     ├─ incrocia fino a 8 fonti meteo (Open-Meteo, MET Norway, DWD, WWO)
                      └─ prova lo script Google della contabilità
 ```
 
@@ -35,7 +35,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 - `app/agente-1.html` è il sorgente dell'artefatto Agente 1.
 - `ponte/vendite.js` trasforma l'export di "Andamento vendite" nel riepilogo per lo specialista vendite. I calcoli (fatturato, provvigioni, proiezione, ritmo) sono copiati dalla app v21, quindi i numeri coincidono. Genera anche gli avvisi: richiami, impegni del giorno, impegni entro 90 minuti, saldi della settimana.
 - `ponte/ordini.js` applica all'app vendite gli ordini di Agente 1 (chiamate, note, richiami, appuntamenti, test drive, venduto, perso, pagamenti), con le stesse regole del Coach della app. Rifiuta gli ordini senza un id valido.
-- `ponte/meteo.js` interroga 6 modelli meteo indipendenti (ECMWF, ICON, GFS, Météo-France, ItaliaMeteo ICON-2I tramite Open-Meteo, più MET Norway/yr.no), li incrocia giorno per giorno (mediana delle temperature, cielo più votato, quanto concordano) e scrive le previsioni con i dati per la schermata. Esegue anche gli ordini di verifica del reparto Meteo.
+- `ponte/meteo.js` interroga fino a 8 fonti meteo indipendenti: ECMWF, ICON, GFS, Météo-France e ItaliaMeteo ICON-2I tramite Open-Meteo, più MET Norway (yr.no), DWD MOSMIX (Bright Sky) e WorldWeatherOnline (wttr.in); se manca il GFS di Open-Meteo usa quello di 7Timer. Le incrocia giorno per giorno (mediana delle temperature, cielo più votato, quanto concordano) e scrive le previsioni con i dati per la schermata. Esegue anche gli ordini di verifica del reparto Meteo.
 - `ponte/stelle.js` legge le richieste di stelle in attesa di "Un passo alla volta" e crea un avviso per quelle nuove. Le stelle si confermano solo dall'app, con il pulsante 🔒.
 - `ponte/contabilita.js` legge le fatture dallo script Google della app di contabilità, con gli stessi calcoli della app.
 - `ponte/backup.js` prepara ogni giorno il backup di tutto (vendite, stelle, Agente 1) in `backup/indice` e `backup/parte-<n>`, sovrascrivendo quello del giorno prima. Il codice dello script della contabilità non viene copiato. Alla prima apertura del giorno l'app propone **Salva sul telefono**: un tocco salva `agente1-backup.json`, perché una pagina web non può scrivere sul telefono senza conferma.
@@ -67,7 +67,7 @@ Chiedi ad Agente 1 per esempio "fai verificare il meteo di domani" o "com'è il 
 
 Ogni luogo ha la sua verifica, con i giorni e le ore del posto. Le previsioni viaggiano dentro l'ordine, quindi verificare un'altra città non cambia il meteo di Bergamo che usa la squadra. Se l'app era chiusa, la schermata compare alla riapertura, entro 3 ore, una volta su ogni dispositivo.
 
-Il battito deve poter raggiungere `api.open-meteo.com`, `geocoding-api.open-meteo.com` e `api.met.no`: vanno tra i domini consentiti dell'ambiente cloud "Assistente AI", come quelli della contabilità. Open-Meteo è gratuito con un limite giornaliero per indirizzo, e dal cloud l'indirizzo è condiviso: nel pomeriggio spesso risponde "limite superato". In quel caso la verifica ha meno di 3 fonti e lo dice.
+Il battito deve poter raggiungere `api.open-meteo.com`, `geocoding-api.open-meteo.com`, `api.met.no`, `api.brightsky.dev`, `wttr.in` e `www.7timer.info`: sono tra i domini consentiti dell'ambiente cloud "Assistente AI", come quelli della contabilità. Open-Meteo è gratuito con un limite giornaliero per indirizzo, e dal cloud l'indirizzo è condiviso: spesso risponde "limite superato". Per questo ci sono le altre quattro fonti, che bastano da sole per i 3 incroci.
 
 ## Limiti da conoscere
 

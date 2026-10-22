@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Reparto meteo di Agente 1: previsioni incrociate di più modelli meteo indipendenti.
-// Interroga 5 modelli tramite Open-Meteo (ECMWF, ICON, GFS, Météo-France, ItaliaMeteo ICON-2I)
-// e il servizio di MET Norway (yr.no), poi per ogni giorno prende la mediana dei numeri,
-// il cielo più votato e misura quanto le fonti concordano.
+// Interroga 5 modelli tramite Open-Meteo (ECMWF, ICON, GFS, Météo-France, ItaliaMeteo ICON-2I),
+// MET Norway (yr.no), DWD MOSMIX (Bright Sky) e WorldWeatherOnline (wttr.in); 7Timer (GFS) sostituisce
+// il GFS di Open-Meteo quando manca. Per ogni giorno prende la mediana dei numeri, il cielo più votato
+// e misura quanto le fonti concordano.
 //
 // Uso: NODE_USE_ENV_PROXY=1 node meteo.js <uscita> [<export-ordini>]
 //   <uscita>         scrive sync/meteo.json (solo per Bergamo, la città di casa) e, per ogni ordine meteo,
@@ -10,7 +11,8 @@
 //   <export-ordini>  cartella con ordini/<id>.json presi in carico. Ogni luogo viene verificato una volta,
 //                    con il numero di giorni più alto chiesto per quel luogo. Senza ordini: Bergamo, 3 giorni.
 // Uscita: 0 se almeno una verifica ha avuto dati, 3 se nessuna fonte ha risposto (sync/meteo.json non viene scritto).
-// Per le prove: METEO_OPEN_METEO, METEO_GEOCODING e METEO_MET_NO sostituiscono gli indirizzi dei servizi.
+// Per le prove: METEO_OPEN_METEO, METEO_GEOCODING, METEO_MET_NO, METEO_BRIGHTSKY, METEO_WTTR e METEO_7TIMER
+// sostituiscono gli indirizzi dei servizi.
 process.env.TZ = 'Europe/Rome';
 
 const fs = require('node:fs');
@@ -25,6 +27,9 @@ if (!dirUscita) {
 const OPEN_METEO = process.env.METEO_OPEN_METEO || 'https://api.open-meteo.com';
 const GEOCODING = process.env.METEO_GEOCODING || 'https://geocoding-api.open-meteo.com';
 const MET_NO = process.env.METEO_MET_NO || 'https://api.met.no';
+const BRIGHTSKY = process.env.METEO_BRIGHTSKY || 'https://api.brightsky.dev';
+const WTTR = process.env.METEO_WTTR || 'https://wttr.in';
+const SETTE_TIMER = process.env.METEO_7TIMER || 'https://www.7timer.info';
 // MET Norway chiede un User-Agent che identifichi l'app.
 const USER_AGENT = 'Agente1/1.0 github.com/ThomasBettino/contabilita';
 
@@ -34,7 +39,11 @@ const FONTI = [
   { id: 'gfs', nome: 'GFS (NOAA, Stati Uniti)', breve: 'GFS', modello: 'gfs_seamless' },
   { id: 'meteofrance', nome: 'Météo-France', breve: 'MÉTÉO-FR', modello: 'meteofrance_seamless' },
   { id: 'italiameteo', nome: 'ItaliaMeteo ICON-2I', breve: 'ITALIA', modello: 'italia_meteo_arpae_icon_2i' },
-  { id: 'metno', nome: 'MET Norway (yr.no)', breve: 'YR.NO' }
+  { id: 'metno', nome: 'MET Norway (yr.no)', breve: 'YR.NO', tipo: 'metno' },
+  { id: 'mosmix', nome: 'DWD MOSMIX (Bright Sky)', breve: 'MOSMIX', tipo: 'brightsky' },
+  { id: 'wwo', nome: 'WorldWeatherOnline (wttr.in)', breve: 'WWO', tipo: 'wttr' },
+  // Stesso modello del GFS di Open-Meteo: conta solo quando quello manca, mai tutti e due.
+  { id: 'gfs7', nome: 'GFS via 7Timer', breve: 'GFS·7T', tipo: 'settetimer', riserva: 'gfs' }
 ];
 const MINIMO_INCROCI = 3;
 const MASSIMO_LUOGHI = 4;
@@ -241,6 +250,83 @@ async function oreMetNo(luogo) {
   return ore;
 }
 
+// DWD MOSMIX tramite Bright Sky: previsioni orarie della stazione più vicina (entro 50 km).
+// Le ore passate di oggi arrivano come osservazioni di altre stazioni: si tengono solo le previsioni.
+async function oreBrightSky(luogo, giorni) {
+  const oggi = giornoLocale(new Date(), luogo.tz);
+  const j = await prendiJson(BRIGHTSKY + '/weather?lat=' + luogo.lat.toFixed(4) + '&lon=' + luogo.lon.toFixed(4) +
+    '&date=' + oggi + '&last_date=' + piuGiorni(oggi, giorni) + '&tz=' + encodeURIComponent(luogo.tz));
+  const previsioni = new Set((j && Array.isArray(j.sources) ? j.sources : []).filter((x) => x.observation_type === 'forecast').map((x) => x.id));
+  const ore = [];
+  for (const w of (j && Array.isArray(j.weather) ? j.weather : [])) {
+    if (!previsioni.has(w.source_id)) continue;
+    const d = new Date(w.timestamp);
+    const temp = num(w.temperature);
+    if (isNaN(d) || temp === null) continue;
+    const mm = num(w.precipitation), nubi = num(w.cloud_cover);
+    const cond = w.condition;
+    const cielo = cond === 'thunderstorm' || cond === 'hail' ? 'temporale' : cond === 'snow' || cond === 'sleet' ? 'neve'
+      : cond === 'rain' ? (mm !== null && mm >= 1 ? 'pioggia' : 'pioggia_debole') : cond === 'fog' ? 'nebbia'
+      : nubi !== null ? cieloDaNubi(nubi) : null;
+    ore.push({ giorno: giornoLocale(d, luogo.tz), ora: oraLocale(d, luogo.tz), t: temp, mm, prob: num(w.precipitation_probability), cielo, nubi, vento: num(w.wind_speed) });
+  }
+  if (!ore.length) throw new Error('nessuna previsione per questo luogo');
+  return ore;
+}
+
+// Codici di WorldWeatherOnline usati da wttr.in.
+const WWO_TEMPORALE = new Set([200, 386, 389, 392, 395]);
+const WWO_NEVE = new Set([179, 182, 185, 227, 230, 281, 284, 311, 314, 317, 320, 323, 326, 329, 332, 335, 338, 350, 362, 365, 368, 371, 374, 377]);
+const WWO_PIOGGIA = new Set([299, 302, 305, 308, 356, 359]);
+const WWO_DEBOLE = new Set([176, 263, 266, 293, 296, 353]);
+const WWO_NEBBIA = new Set([143, 248, 260]);
+// wttr.in: tre giorni, ogni tre ore, già nell'ora locale del luogo; ogni valore è una stringa.
+async function oreWttr(luogo) {
+  const j = await prendiJson(WTTR + '/' + luogo.lat.toFixed(4) + ',' + luogo.lon.toFixed(4) + '?format=j1');
+  const ore = [];
+  for (const g of (j && Array.isArray(j.weather) ? j.weather : [])) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(g.date))) continue;
+    for (const h of (Array.isArray(g.hourly) ? g.hourly : [])) {
+      const temp = num(Number(h.tempC)), ora = Math.floor(Number(h.time) / 100);
+      if (temp === null || !(ora >= 0 && ora <= 23)) continue;
+      const c = Number(h.weatherCode), nubi = num(Number(h.cloudcover)), mm = num(Number(h.precipMM));
+      const cielo = WWO_TEMPORALE.has(c) ? 'temporale' : WWO_NEVE.has(c) ? 'neve' : WWO_PIOGGIA.has(c) ? 'pioggia'
+        : WWO_DEBOLE.has(c) ? 'pioggia_debole' : WWO_NEBBIA.has(c) ? 'nebbia' : nubi !== null ? cieloDaNubi(nubi) : null;
+      ore.push({ giorno: g.date, ora, t: temp, mm, prob: num(Number(h.chanceofrain)), cielo, nubi, vento: num(Number(h.windspeedKmph)) });
+    }
+  }
+  if (!ore.length) throw new Error('risposta senza previsioni');
+  return ore;
+}
+
+// 7Timer (prodotto CIVIL, modello GFS): ogni tre ore da 'init' (UTC). Nuvole, pioggia e vento sono classi:
+// qui diventano il valore centrale della classe.
+const NUBI_7T = [null, 3, 12, 25, 37, 50, 62, 75, 87, 97];
+const MM_ORA_7T = [0, 0.1, 0.6, 2.5, 7, 13, 23, 40, 62, 80];
+const VENTO_7T = [null, 1, 7, 20, 34, 50, 75, 103, 120];
+async function ore7Timer(luogo) {
+  const j = await prendiJson(SETTE_TIMER + '/bin/civil.php?lon=' + luogo.lon.toFixed(3) + '&lat=' + luogo.lat.toFixed(3) + '&ac=0&unit=metric&output=json&tzshift=0');
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})$/.exec(String(j && j.init));
+  if (!m || !Array.isArray(j.dataseries)) throw new Error('risposta senza previsioni');
+  const zero = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4]);
+  const ore = [];
+  for (const x of j.dataseries) {
+    const temp = num(x.temp2m), tp = num(x.timepoint);
+    if (temp === null || tp === null) continue;
+    const d = new Date(zero + tp * 3600000);
+    const w = String(x.weather || '').replace(/(day|night)$/, '');
+    const nubi = NUBI_7T[x.cloudcover] === undefined ? null : NUBI_7T[x.cloudcover];
+    const mm = (MM_ORA_7T[x.prec_amount] || 0) * 3;
+    const cielo = /^ts/.test(w) ? 'temporale' : /snow/.test(w) || x.prec_type === 'snow' || x.prec_type === 'icep' ? 'neve'
+      : w === 'rain' ? 'pioggia' : /rain|shower/.test(w) ? 'pioggia_debole' : w === 'humid' ? 'nebbia'
+      : w === 'clear' ? 'sereno' : w === 'pcloudy' ? 'poco_nuvoloso' : w === 'mcloudy' ? 'nuvoloso' : w === 'cloudy' ? 'coperto' : cieloDaNubi(nubi);
+    ore.push({ giorno: giornoLocale(d, luogo.tz), ora: oraLocale(d, luogo.tz), t: temp, mm, prob: null, cielo, nubi,
+      vento: x.wind10m && VENTO_7T[x.wind10m.speed] !== undefined ? VENTO_7T[x.wind10m.speed] : null });
+  }
+  if (!ore.length) throw new Error('risposta senza previsioni');
+  return ore;
+}
+
 /* ---------- Riassunto di un intervallo di ore ---------- */
 
 function cieloPrevalente(ore, sogliaPioggia, sogliaDebole) {
@@ -318,8 +404,12 @@ function incrocia(giorno, perFonte) {
   const mins = v.map((x) => x.dati.min).filter((x) => x !== null), maxs = v.map((x) => x.dati.max).filter((x) => x !== null);
   const bagnate = v.filter((x) => BAGNATO.has(x.dati.cielo));
   const asciutte = v.filter((x) => x.dati.cielo && !BAGNATO.has(x.dati.cielo));
-  const scartoMax = maxs.length ? Math.max(...maxs) - Math.min(...maxs) : 0;
-  const scartoMin = mins.length ? Math.max(...mins) - Math.min(...mins) : 0;
+  // Con 5 fonti o più il valore più alto e il più basso non contano: una fonte fuori dal coro
+  // non deve far sembrare discorde una previsione su cui le altre concordano.
+  const centrali = (a) => (a.length >= 5 ? a.slice().sort((x, y) => x - y).slice(1, -1) : a);
+  const cMax = centrali(maxs), cMin = centrali(mins);
+  const scartoMax = cMax.length ? Math.max(...cMax) - Math.min(...cMax) : 0;
+  const scartoMin = cMin.length ? Math.max(...cMin) - Math.min(...cMin) : 0;
   const minoranza = Math.min(bagnate.length, asciutte.length) / Math.max(1, bagnate.length + asciutte.length);
   let accordo;
   if (n < 2) accordo = 'una fonte';
@@ -332,8 +422,8 @@ function incrocia(giorno, perFonte) {
     const nomi = (a) => a.map((x) => x.fonte.breve).join(', ');
     differenze.push('pioggia per ' + nomi(bagnate) + ', asciutto per ' + nomi(asciutte));
   }
-  if (scartoMax >= 3) differenze.push('massime da ' + Math.min(...maxs) + ' a ' + Math.max(...maxs) + ' °C');
-  if (scartoMin >= 4) differenze.push('minime da ' + Math.min(...mins) + ' a ' + Math.max(...mins) + ' °C');
+  if (scartoMax >= 3) differenze.push('massime da ' + Math.min(...cMax) + ' a ' + Math.max(...cMax) + ' °C');
+  if (scartoMin >= 4) differenze.push('minime da ' + Math.min(...cMin) + ' a ' + Math.max(...cMin) + ' °C');
 
   const fasce = {};
   for (const [nome] of FASCE) {
@@ -392,11 +482,15 @@ async function verifica(luogo, giorni, idOrdini) {
   const adesso = new Date();
   const oggi = giornoLocale(adesso, luogo.tz);
   const oraAdesso = oraLocale(adesso, luogo.tz);
-  const [openMeteo, metNo] = await Promise.all([
+  const esito = (p) => p.then((ore) => ({ ore }), (e) => ({ errore: e.message }));
+  const [openMeteo, altre] = await Promise.all([
     tuttiOpenMeteo(luogo, giorni),
-    oreMetNo(luogo).then((ore) => ({ ore }), (e) => ({ errore: e.message }))
+    Promise.all([esito(oreMetNo(luogo)), esito(oreBrightSky(luogo, giorni)), esito(oreWttr(luogo)), esito(ore7Timer(luogo))])
   ]);
-  const risposte = FONTI.map((fonte) => ({ fonte, ...(fonte.modello ? openMeteo[fonte.id] : metNo) }));
+  const perTipo = { metno: altre[0], brightsky: altre[1], wttr: altre[2], settetimer: altre[3] };
+  const risposte = FONTI.map((fonte) => ({ fonte, ...(fonte.modello ? openMeteo[fonte.id] : perTipo[fonte.tipo]) }))
+    // Una fonte di riserva entra solo se la sua principale non ha dati: lo stesso modello non vale due incroci.
+    .filter((r) => !r.fonte.riserva || !openMeteo[r.fonte.riserva] || !openMeteo[r.fonte.riserva].ore);
 
   const date = Array.from({ length: giorni }, (_, i) => piuGiorni(oggi, i));
   const fontiOk = [];

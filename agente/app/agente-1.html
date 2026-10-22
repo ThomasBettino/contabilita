@@ -1004,7 +1004,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
 
   // Meteo: una verifica non cambia dati di nessuno, quindi parte sempre subito.
   const REGOLE_METEO = "\n\nPUOI ANCHE AGIRE: se Agente 1 ti chiede una verifica immediata, previsioni aggiornate, un altro luogo o più giorni, oppure se le previsioni qui sotto hanno più di 3 ore, usa verifica_subito. " +
-    "Il battito interroga subito 6 modelli meteo indipendenti, li incrocia (ne servono almeno 3) e in 2-4 minuti Thomas vede nell'app la schermata delle previsioni: dillo nella risposta. " +
+    "Il battito interroga subito fino a 8 fonti meteo indipendenti, le incrocia (ne servono almeno 3) e in 2-4 minuti Thomas vede nell'app la schermata delle previsioni: dillo nella risposta. " +
     "Se la domanda dice che Thomas vuole la schermata anche per email, metti email true. Una località per ordine: per più località, un ordine per ciascuna. " +
     "Intanto rispondi con le previsioni che hai, dicendo di che ora sono.";
 
@@ -1080,7 +1080,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
       return { ordine: id, stato: "in coda, ma il battito non si è svegliato (" + sveglia.motivo + "): l'ordine parte al prossimo giro orario, dalle 8 alle 21. Dillo a Thomas." };
     }
     return agente === "meteo"
-      ? { ordine: id, stato: "in coda: il battito interroga subito 6 modelli meteo e in 2-4 minuti Thomas vede la schermata delle previsioni" + (email ? ", che gli arriva anche per email" : "") }
+      ? { ordine: id, stato: "in coda: il battito interroga subito fino a 8 fonti meteo e in 2-4 minuti Thomas vede la schermata delle previsioni" + (email ? ", che gli arriva anche per email" : "") }
       : { ordine: id, stato: "in coda: il battito lo applica nell'app vendite entro un paio di minuti" };
   }
 
@@ -1447,7 +1447,10 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     // Con il vento la riga in più spinge giù l'etichetta dell'accordo, che altrimenti ci finirebbe sopra.
     const conVento = typeof g0.vento === "number" && g0.vento >= 20;
     const base = conVento ? 198 : 176;
-    const hHero = base + (fasce.length ? 74 : 0) + (fontiG0.length ? 78 : 0);
+    // Gli incroci stanno su una riga fino a 6 fonti, poi su due.
+    const perRiga = fontiG0.length <= 6 ? fontiG0.length : Math.ceil(fontiG0.length / 2);
+    const righe = fontiG0.length ? Math.ceil(fontiG0.length / perRiga) : 0;
+    const hHero = base + (fasce.length ? 74 : 0) + (righe ? 20 + 58 * righe : 0);
     const xh = PAD, wh = W - PAD * 2;
     pannello(xh, y, wh, hHero, "rgba(143,107,255,.38)");
     c.save(); tondo(xh, y, wh, hHero, 16); c.clip();
@@ -1487,14 +1490,14 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     if (fontiG0.length) {
       linea(yh);
       font(600, 9, TIT); spazia(1.6); scrivi("GLI INCROCI DI " + n0.nome.toUpperCase(), xh + 16, yh + 18, TENUE); spazia(0);
-      const cw = (wh - 16) / fontiG0.length;
+      const cw = (wh - 16) / perRiga;
       fontiG0.forEach((f, i) => {
-        const cx = xh + 8 + cw * i + cw / 2;
-        font(600, 8, TIT); spazia(.6); scrivi(String(nomiFonti[f.id] || f.id).slice(0, 9), cx, yh + 34, TENUE, "center"); spazia(0);
-        icona(f.cielo, cx, yh + 50, 24);
-        font(700, 11, TES); scrivi(gradiMeteo(f.max), cx, yh + 72, TESTO, "center");
+        const cx = xh + 8 + cw * (i % perRiga) + cw / 2, yr = yh + 58 * Math.floor(i / perRiga);
+        font(600, 8, TIT); spazia(.6); scrivi(String(nomiFonti[f.id] || f.id).slice(0, 9), cx, yr + 34, TENUE, "center"); spazia(0);
+        icona(f.cielo, cx, yr + 50, 24);
+        font(700, 11, TES); scrivi(gradiMeteo(f.max), cx, yr + 72, TESTO, "center");
       });
-      yh += 78;
+      yh += 20 + 58 * righe;
     }
     y += hHero + 12;
 
@@ -1545,7 +1548,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     font(600, 9.5, TIT); spazia(1.6); scrivi("FONTI", PAD, y, TENUE); spazia(0);
     y += 15;
     font(500, 10.5, TES); c.fillStyle = TESTO; c.textAlign = "left";
-    y = aCapo((v.fonti || []).map((f) => f.nome).join(" · "), PAD, y, W - PAD * 2, 14, 3);
+    y = aCapo((v.fonti || []).map((f) => f.nome).join(" · "), PAD, y, W - PAD * 2, 14, 4);
     if (v.mancanti && v.mancanti.length) { c.fillStyle = TENUE; y = aCapo("Non hanno risposto: " + v.mancanti.map((f) => f.nome).join(", "), PAD, y, W - PAD * 2, 14, 2); }
     c.fillStyle = TENUE;
     y = aCapo("Temperature: mediana delle fonti. Pioggia: probabilità più alta della giornata.", PAD, y, W - PAD * 2, 14, 2);
