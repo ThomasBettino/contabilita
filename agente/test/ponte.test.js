@@ -37,6 +37,21 @@ for (const f of fs.readdirSync(PONTE).filter((f) => f.endsWith('.js'))) {
   prova(f + ' si legge', ok);
 }
 
+console.log('TURNO.md');
+{
+  const turno = fs.readFileSync(process.env.TURNO_MD || path.join(PONTE, 'TURNO.md'), 'utf8');
+  const passi = turno.slice(turno.indexOf('## Passi'));
+  const titoli = new Set([...passi.matchAll(/^\s*(?:\*\*)?(\d+[a-z]?)\. \*\*/gm)].map((m) => m[1]));
+  const citati = [...new Set([...turno.matchAll(/passo (\d+[a-z]?)\b/g)].map((m) => m[1]))];
+  const mancano = citati.filter((p) => !titoli.has(p));
+  prova('ogni passo citato esiste', mancano.length === 0, { mancano, titoli: [...titoli] });
+  const copiati = [...(turno.match(/^1\. \*\*Script\.\*\*[\s\S]*?\n1b\./m) || [''])[0].matchAll(/`?(\w+)\.js`/g)].map((m) => m[1]);
+  const script = fs.readdirSync(PONTE).filter((f) => f.endsWith('.js')).map((f) => f.slice(0, -3));
+  prova('il passo 1 copia tutti gli script del ponte', script.every((s) => copiati.includes(s)), { copiati, script });
+  const usati = [...new Set([...turno.matchAll(/W\/ponte\/(\w+)\.js/g)].map((m) => m[1]))];
+  prova('gli script usati esistono', usati.every((s) => script.includes(s)), usati.filter((s) => !script.includes(s)));
+}
+
 console.log('calendario.js');
 {
   const W = cartella();
