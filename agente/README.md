@@ -19,6 +19,8 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                      ├─ esegue gli ordini di Agente 1 nell'app Andamento vendite
                      ├─ legge l'artefatto Andamento vendite
                      ├─ legge le stelle in attesa di Un passo alla volta (solo lettura)
+                    Sentinella stelle (attività programmata Claude, alle :37, 8–24)
+                     └─ ricontrolla stelle e segnalazioni di assistenza a metà ora
                      ├─ incrocia fino a 8 fonti meteo (Open-Meteo, MET Norway, DWD, WWO)
                      └─ prova lo script Google della contabilità
 ```
@@ -36,7 +38,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 - `ponte/vendite.js` trasforma l'export di "Andamento vendite" nel riepilogo per lo specialista vendite. I calcoli (fatturato, provvigioni, proiezione, ritmo) sono copiati dalla app v21, quindi i numeri coincidono. Genera anche gli avvisi: richiami, impegni del giorno, impegni entro 90 minuti, saldi della settimana.
 - `ponte/ordini.js` applica all'app vendite gli ordini di Agente 1 (chiamate, note, richiami, appuntamenti, test drive, venduto, perso, pagamenti), con le stesse regole del Coach della app. Rifiuta gli ordini senza un id valido.
 - `ponte/meteo.js` interroga fino a 8 fonti meteo indipendenti: ECMWF, ICON, GFS, Météo-France e ItaliaMeteo ICON-2I tramite Open-Meteo, più MET Norway (yr.no), DWD MOSMIX (Bright Sky) e WorldWeatherOnline (wttr.in); se manca il GFS di Open-Meteo usa quello di 7Timer. Le incrocia giorno per giorno (mediana delle temperature, cielo più votato, quanto concordano) e scrive le previsioni con i dati per la schermata. Esegue anche gli ordini di verifica del reparto Meteo.
-- `ponte/stelle.js` legge le richieste di stelle in attesa di "Un passo alla volta" e crea un avviso per quelle nuove. Le stelle si confermano solo dall'app, con il pulsante 🔒.
+- `ponte/stelle.js` legge le richieste di stelle in attesa e le segnalazioni di assistenza nuove di "Un passo alla volta", crea un avviso per quelle nuove e prepara il testo della notifica. Lo usano il battito (alle :07) e la **Sentinella stelle** (alle :37): le stelle vengono controllate ogni mezz'ora, e nel nodo Stelle dell'app si vede l'ora dell'ultimo controllo. Le stelle si confermano solo dall'app, con il pulsante 🔒.
 - `ponte/contabilita.js` legge le fatture dallo script Google della app di contabilità, con gli stessi calcoli della app.
 - `ponte/backup.js` prepara ogni giorno il backup di tutto (vendite, stelle, Agente 1) in `backup/indice` e `backup/parte-<n>`, sovrascrivendo quello del giorno prima. Il codice dello script della contabilità non viene copiato. Alla prima apertura del giorno l'app propone **Salva sul telefono**: un tocco salva `agente1-backup.json`, perché una pagina web non può scrivere sul telefono senza conferma.
 - `ponte/BATTITO.md` è la procedura che il battito esegue ogni ora.
@@ -72,6 +74,7 @@ Il battito deve poter raggiungere `api.open-meteo.com`, `geocoding-api.open-mete
 ## Limiti da conoscere
 
 - **Dettatura:** la pagina non può usare il microfono. Per parlare usa il microfono della tastiera del telefono. La risposta a voce invece funziona: pulsante "Voce".
-- **Freschezza:** vendite e contabilità sono aggiornate al battito più recente, ogni ora dalle 8 alle 21, oppure quando premi Aggiorna. Google Calendar è sempre in diretta.
+- **Freschezza:** vendite e contabilità sono aggiornate al battito più recente, ogni ora dalle 8 alle 21, oppure quando premi Aggiorna. Le stelle ogni mezz'ora (battito e sentinella), dalle 8 a mezzanotte. Google Calendar è sempre in diretta.
+- **Ogni quanto:** un'attività programmata può partire al massimo una volta all'ora. Per questo le stelle non si possono controllare ogni 10 minuti: le controllano due attività diverse, sfasate di mezz'ora.
 - **Vendite: ordini, non scrittura diretta.** Una pagina non può scrivere nell'app di un'altra, quindi quando chiedi una modifica Agente 1 passa un **ordine** allo specialista Vendite. In chat compare la carta "→ Vendite · in coda" con Annulla. Agente 1 sveglia il battito, che applica l'ordine nell'app entro un paio di minuti; la carta diventa "fatto" e arriva la notifica. Se Agente 1 decide di modificare qualcosa senza che tu l'abbia chiesto, la carta aspetta il tuo **Conferma**. Le stelle e la contabilità restano in sola lettura.
 - **Costo:** ogni battito è una breve sessione Claude sul tuo piano, 14 al giorno. Puoi cambiare orari o frequenza dell'attività programmata.

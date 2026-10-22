@@ -12,7 +12,8 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 - **Stelle:** artefatto "Un passo alla volta" https://claude.ai/artifact/1JND3NoRY2ae7e8VH6RFyW, app per l'ADHD della ragazza del proprietario. Le richieste di stelle stanno nella collezione `richieste` (`{text, pts, at, name}`); le conferma solo il proprietario dall'app (pulsante 🔒, scrive `decisioni`). **Solo lettura** per Agente 1 e il battito.
 - **Ponte:** `agente/ponte/vendite.js`, `agente/ponte/ordini.js`, `agente/ponte/meteo.js`, `agente/ponte/stelle.js`, `agente/ponte/contabilita.js` e la procedura `agente/ponte/BATTITO.md`.
 - **Battito:** attività programmata `trig_012d788GhKJBKNVePY1YUhKv` ("Battito di Agente 1"), ogni ora dalle 8:07 alle 21:07 ora italiana. Ogni esecuzione è una sessione nuova con notifica push. L'id sta anche in `config/ponte` del database di Agente 1, per il pulsante Aggiorna.
-- **Notifiche delle stelle:** le manda solo il battito di Agente 1. La vecchia attività "Stelle da confermare" (`trig_016JQxVcwLdK8HhSunLkNRAw`) è disattivata su richiesta del proprietario: non riattivarla, altrimenti le notifiche arrivano doppie.
+- **Sentinella stelle:** attività programmata `trig_01BLpde95QNtW79SrYk9XRg7` ("Sentinella stelle di Agente 1"), alle :37 dalle 8 alle 23 ora italiana, una sessione nuova per volta, senza notifica di fine giro: manda la notifica con PushNotification solo quando `stelle.js` restituisce `push`. Se gli id in attesa sono uguali a `sync/stelle.ids` aggiorna solo `controllato`. Il proprietario voleva ogni 10 minuti, ma il minimo per un'attività è un'ora: battito (:07) e sentinella (:37) insieme fanno un controllo ogni mezz'ora. Non creare copie della stessa attività per scendere sotto l'ora.
+- **Notifiche delle stelle:** le mandano il battito e la sentinella, che non segnalano due volte la stessa richiesta (`sync/stelle.ids` e il campo `richieste` degli avvisi). La vecchia attività "Stelle da confermare" (`trig_016JQxVcwLdK8HhSunLkNRAw`) è disattivata su richiesta del proprietario: non riattivarla.
 
 ## Database di Agente 1
 
@@ -21,7 +22,7 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 | `sync/vendite` | `{aggiornato, fonte, polso, agenda[], testo}` scritto da `vendite.js` |
 | `sync/meteo` | Solo Bergamo. `{aggiornato, luogo, testo, fonti[], verifica:{nFonti, minimo, verificato, oggi, fuso, fonti[], mancanti[], giorni[], ordini[]}}` scritto da `meteo.js`; `verifica.giorni[]` porta mediane, cielo, accordo, fasce e valori per fonte |
 | `sync/contabilita` | `{aggiornato, fonte, testo, stato?}` scritto da `contabilita.js` |
-| `sync/stelle` | `{aggiornato, fonte, link, nome, inAttesa, stelle, testo}` scritto da `stelle.js` |
+| `sync/stelle` | `{aggiornato, controllato, fonte, link, nome, inAttesa, stelle, assistenza, ids, idsAssistenza, testo}` scritto da `stelle.js`; `ids` sono le richieste già viste, `controllato` l'ora dell'ultimo controllo |
 | `notifiche/<id>` | `{titolo, testo, ora, fonte, letta, link?, richieste?}`; id stabili per non ripetere gli avvisi; gli avvisi delle stelle elencano in `richieste` gli id che coprono |
 | `ordini/<id>` | `{agente, operazione, argomenti, descrizione, stato, creato, richiesta, nuovoId?, esito?, eseguito?}`. Stati: `da confermare` → `in attesa` → `in esecuzione` → `eseguito`/`errore`, oppure `annullato`. Li crea lo specialista Vendite con i suoi 9 strumenti; partono subito solo se l'ultima richiesta del proprietario chiede una modifica, altrimenti aspettano Conferma. Lo specialista Meteo crea `{agente:"meteo", operazione:"verifica", argomenti:{luogo, giorni}}` con `verifica_subito`, sempre in attesa; il battito li esegue per primi (passo 1b) e scrive nell'esito anche `previsioni` (stessa forma di `sync/meteo`, per il luogo dell'ordine). L'app disegna la schermata da `ordine.previsioni`, una volta per dispositivo (`localStorage` `agente1-meteo-visti`); l'email parte solo dal dispositivo che l'ha chiesta (`agente1-meteo-email`), mai dal database |
 | `config/agenti` | `{istruzioni:{vendite,agenda,contabilita,meteo}, storia[]}` scritti da `migliora_agente` |
@@ -50,7 +51,7 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 # export dei dati vendite con ArtifactData list/get e out_dir, poi:
 TZ=Europe/Rome node agente/ponte/vendite.js <export-vendite> <export-notifiche-agente> <uscita>
 TZ=Europe/Rome node agente/ponte/ordini.js <export-ordini> <export-vendite> <uscita>   # scrive <uscita>/ordini-piano.json, scritture/, ordini/
-TZ=Europe/Rome node agente/ponte/stelle.js <export-richieste> <export-notifiche-agente> <uscita>
+TZ=Europe/Rome node agente/ponte/stelle.js <export-stelle> <export-agente> <uscita>   # export-stelle: richieste/ e assistenza/; export-agente: sync/stelle.json e/o notifiche/
 NODE_USE_ENV_PROXY=1 TZ=Europe/Rome node agente/ponte/meteo.js <uscita> [<export-ordini>]   # METEO_OPEN_METEO, METEO_GEOCODING, METEO_MET_NO per un server finto
 NODE_USE_ENV_PROXY=1 node agente/ponte/contabilita.js <uscita> [collegamento.json]   # {url, token}, oppure CONTABILITA_URL/TOKEN
 ```

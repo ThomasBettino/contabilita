@@ -371,7 +371,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
     agenda: "Sei lo specialista agenda nella squadra di Agente 1. Unisci due fonti: Google Calendar, che leggi con lo strumento eventi_calendario, e l'agenda dell'app vendite (appuntamenti, test drive, richiami) che trovi nei dati. Indica gli impegni in ordine di orario, con giorno e ora in modo naturale. Crea un evento con crea_evento solo se la richiesta lo chiede in modo esplicito, poi dì cosa hai creato.",
     contabilita: "Sei lo specialista contabilità nella squadra di Agente 1. Lavori sulle fatture della app di contabilità: bonifici da incassare, Enasarco, tasse da accantonare, fatture scadute. I calcoli sono già fatti nei dati: non rifarli a memoria. Se i dati mancano, dillo e spiega che la contabilità non è ancora collegata.",
     meteo: "Sei lo specialista meteo nella squadra di Agente 1. Usi le previsioni che il battito calcola incrociando più modelli meteo indipendenti (ECMWF, ICON, GFS, Météo-France, ItaliaMeteo, yr.no). Dì sempre a che ora risalgono, su quante fonti sono verificate e dove le fonti non concordano. Se mancano o sono vecchie, dillo.",
-    stelle: "Sei lo specialista stelle nella squadra di Agente 1. Segui l'app Un passo alla volta della ragazza del proprietario: lei chiede stelle per le cose che fa e lui le conferma dall'app, con il pulsante 🔒. Dì quante richieste aspettano, da quando e per cosa, con tono affettuoso e leggero. Ricorda che si confermano solo dall'app: tu non puoi confermarle."
+    stelle: "Sei lo specialista stelle nella squadra di Agente 1. Segui l'app Un passo alla volta della ragazza del proprietario: lei chiede stelle per le cose che fa e lui le conferma dall'app, con il pulsante 🔒. Dì quante richieste aspettano, da quando e per cosa, con tono affettuoso e leggero. Ricorda che si confermano solo dall'app: tu non puoi confermarle. Se ci sono segnalazioni di assistenza nuove (qualcosa che nell'app non va o non si capisce), dillo."
   };
 
   // Ritmo della scrittura: circa 26 caratteri al secondo, con pause sulla punteggiatura.
@@ -554,11 +554,16 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
         pronto = true;
         riga = S.sync.stelle.stelle + " ⭐ da confermare";
         li.classList.add("chiama");
+      } else if (k === "stelle" && S.sync.stelle && S.sync.stelle.assistenza > 0) {
+        pronto = true;
+        riga = "🛟 " + S.sync.stelle.assistenza + (S.sync.stelle.assistenza === 1 ? " segnalazione" : " segnalazioni");
+        li.classList.add("chiama");
       } else {
         const s = S.sync[k];
         pronto = !!(s && s.aggiornato && !s.stato);
         if (s && s.stato) riga = s.stato;
-        else if (s && s.aggiornato) riga = quando(s.aggiornato);
+        // Le stelle le controllano il battito e la sentinella, due volte all'ora: si vede l'ora dell'ultimo controllo.
+        else if (s && s.aggiornato) riga = quando(s.controllato || s.aggiornato);
         else riga = k === "contabilita" ? (S.contaCollegata ? "in attesa del battito" : "non collegata") : "in attesa del battito";
       }
       li.classList.add(pronto ? "pronto" : "manca");
@@ -885,7 +890,7 @@ body[data-stato="scrive"] .orb::after,body[data-stato="parla"] .orb::after{box-s
                : "DATI: la contabilità non è ancora collegata, quindi non hai numeri.";
     }
     if (k === "stelle") {
-      return s ? "STELLE DA CONFERMARE (lette " + quando(s.aggiornato) + "):\n" + s.testo
+      return s ? "STELLE DA CONFERMARE (controllate " + quando(s.controllato || s.aggiornato) + "):\n" + s.testo
                : "DATI: le richieste di stelle non sono ancora state lette dal battito.";
     }
     if (k === "meteo") {
