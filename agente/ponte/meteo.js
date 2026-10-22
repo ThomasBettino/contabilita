@@ -95,20 +95,29 @@ function pulisciGiorni(x) {
 
 /* ---------- Rete ---------- */
 
-async function prendiJson(url, intestazioni) {
-  let r;
-  try {
-    r = await fetch(url, { headers: { 'user-agent': USER_AGENT, accept: 'application/json', ...(intestazioni || {}) }, signal: AbortSignal.timeout(20000) });
-  } catch (e) {
-    // Dietro il proxy dell'ambiente cloud un dominio non consentito arriva come errore di rete.
-    throw new Error(e && e.name === 'TimeoutError' ? 'nessuna risposta in 20 secondi' : 'rete bloccata o servizio giù');
+const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+// Il cloud esce su indirizzi condivisi: Open-Meteo a volte risponde 429 (limite giornaliero di quell'indirizzo)
+// o non risponde affatto. Un nuovo tentativo di solito passa da un altro indirizzo.
+async function prendiJson(url, tentativi = 3) {
+  let ultimo;
+  for (let i = 0; i < tentativi; i++) {
+    if (i) await pausa(1500 * i);
+    let r;
+    try {
+      r = await fetch(url, { headers: { 'user-agent': USER_AGENT, accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+    } catch (e) {
+      // Dietro il proxy dell'ambiente cloud un dominio non consentito arriva come errore di rete.
+      ultimo = new Error(e && e.name === 'TimeoutError' ? 'nessuna risposta in 15 secondi' : 'rete bloccata o servizio giù');
+      continue;
+    }
+    const testo = await r.text().catch(() => '');
+    let j = null;
+    try { j = JSON.parse(testo); } catch (e) { /* risposta non JSON */ }
+    if (r.ok && j) return j;
+    ultimo = new Error(r.ok ? 'risposta non JSON' : 'HTTP ' + r.status + (j && j.reason ? ': ' + String(j.reason).slice(0, 160) : ''));
+    if (r.status >= 400 && r.status < 500 && r.status !== 429 && r.status !== 408) break; // richiesta sbagliata: inutile riprovare
   }
-  const testo = await r.text();
-  let j = null;
-  try { j = JSON.parse(testo); } catch (e) { /* risposta non JSON */ }
-  if (!r.ok) throw new Error('HTTP ' + r.status + (j && j.reason ? ': ' + String(j.reason).slice(0, 160) : ''));
-  if (!j) throw new Error('risposta non JSON');
-  return j;
+  throw ultimo;
 }
 
 async function trovaLuogo(nome) {
@@ -152,11 +161,30 @@ function cieloDaSimbolo(s) {
   return null;
 }
 
-async function oreOpenMeteo(fonte, luogo, giorni) {
-  const variabili = 'temperature_2m,precipitation,precipitation_probability,weather_code,cloud_cover,wind_speed_10m';
-  const u = OPEN_METEO + '/v1/forecast?latitude=' + luogo.lat + '&longitude=' + luogo.lon +
-    '&hourly=' + variabili + '&models=' + fonte.modello + '&timezone=Europe%2FRome&forecast_days=' + giorni + '&wind_speed_unit=kmh';
-  const j = await prendiJson(u);
+const urlOpenMeteo = (modelli, luogo, giorni) => OPEN_METEO + '/v1/forecast?latitude=' + luogo.lat + '&longitude=' + luogo.lon +
+  '&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,cloud_cover,wind_speed_10m&models=' + modelli.join(',') +
+  '&timezone=Europe%2FRome&forecast_days=' + giorni + '&wind_speed_unit=kmh';
+
+// Prima una richiesta sola con tutti i modelli (più rapida e meno esposta ai limiti); se non passa, un modello alla volta.
+async function tuttiOpenMeteo(luogo, giorni) {
+  const fonti = FONTI.filter((f) => f.modello);
+  const esito = {};
+  try {
+    const j = await prendiJson(urlOpenMeteo(fonti.map((f) => f.modello), luogo, giorni));
+    for (const f of fonti) {
+      try { esito[f.id] = { ore: oreOpenMeteo(f, j) }; } catch (e) { esito[f.id] = { errore: e.message }; }
+    }
+    return esito;
+  } catch (e) {
+    console.error('Richiesta unica a Open-Meteo non riuscita (' + e.message + '): provo un modello alla volta.');
+  }
+  await Promise.all(fonti.map(async (f) => {
+    try { esito[f.id] = { ore: oreOpenMeteo(f, await prendiJson(urlOpenMeteo([f.modello], luogo, giorni), 2)) }; } catch (e) { esito[f.id] = { errore: e.message }; }
+  }));
+  return esito;
+}
+
+function oreOpenMeteo(fonte, j) {
   const h = j && j.hourly;
   if (!h || !Array.isArray(h.time)) throw new Error('risposta senza dati orari');
   // Con un solo modello i nomi sono semplici; con più modelli hanno il suffisso del modello.
@@ -171,6 +199,7 @@ async function oreOpenMeteo(fonte, luogo, giorni) {
     const nubi = num(N[i]);
     ore.push({ giorno: m[1], ora: Number(m[2]), t: temp, mm: num(P[i]), prob: num(PP[i]), cielo: cieloDaWmo(num(C[i]), nubi), nubi, vento: num(V[i]) });
   });
+  if (!ore.length) throw new Error('nessun dato per questo luogo');
   return ore;
 }
 
@@ -219,18 +248,22 @@ function cieloPrevalente(ore, sogliaPioggia, sogliaDebole) {
   return asciutti[0][1] ? asciutti[0][0] : null;
 }
 
-function riassumiGiorno(ore) {
-  if (ore.length < 4) return null;
-  const temp = ore.map((o) => o.t);
+// daOra: per oggi l'ora attuale. Minime e massime restano dell'intera giornata; cielo, pioggia e vento
+// guardano solo le ore che restano, altrimenti la pioggia della notte passata pesa sulla giornata.
+function riassumiGiorno(tutte, daOra) {
+  if (tutte.length < 4) return null;
+  const temp = tutte.map((o) => o.t);
+  const restano = tutte.filter((o) => o.ora >= daOra);
+  const ore = restano.length >= 3 ? restano : tutte.slice(-3);
   // Una fonte che parte da adesso (yr.no) non vede la notte né, di sera, il caldo del giorno:
   // quei valori non entrano nell'incrocio.
-  const prima = Math.min(...ore.map((o) => o.ora));
+  const prima = Math.min(...tutte.map((o) => o.ora));
   const diurne = ore.filter((o) => o.ora >= 7 && o.ora <= 20);
   const probs = ore.map((o) => o.prob).filter((x) => x !== null);
   const venti = ore.map((o) => o.vento).filter((x) => x !== null);
   const fasce = {};
   for (const [nome, da, a] of FASCE) {
-    const f = ore.filter((o) => o.ora >= da && o.ora < a);
+    const f = tutte.filter((o) => o.ora >= da && o.ora < a);
     if (!f.length) continue;
     const pf = f.map((o) => o.prob).filter((x) => x !== null);
     fasce[nome] = {
@@ -267,12 +300,11 @@ function incrocia(giorno, perFonte) {
   const asciutte = v.filter((x) => x.dati.cielo && !BAGNATO.has(x.dati.cielo));
   const scartoMax = maxs.length ? Math.max(...maxs) - Math.min(...maxs) : 0;
   const scartoMin = mins.length ? Math.max(...mins) - Math.min(...mins) : 0;
-  const scarto = Math.max(scartoMax, scartoMin);
   const minoranza = Math.min(bagnate.length, asciutte.length) / Math.max(1, bagnate.length + asciutte.length);
   let accordo;
   if (n < 2) accordo = 'una fonte';
-  else if (scarto >= 5 || minoranza >= 0.4) accordo = 'basso';
-  else if (scarto >= 3 || minoranza > 0) accordo = 'medio';
+  else if (scartoMax >= 5 || scartoMin >= 6 || minoranza >= 0.4) accordo = 'basso';
+  else if (scartoMax >= 3 || scartoMin >= 4 || minoranza > 0) accordo = 'medio';
   else accordo = 'alto';
 
   const differenze = [];
@@ -281,7 +313,7 @@ function incrocia(giorno, perFonte) {
     differenze.push('pioggia per ' + nomi(bagnate) + ', asciutto per ' + nomi(asciutte));
   }
   if (scartoMax >= 3) differenze.push('massime da ' + Math.min(...maxs) + ' a ' + Math.max(...maxs) + ' °C');
-  if (scartoMin >= 3) differenze.push('minime da ' + Math.min(...mins) + ' a ' + Math.max(...mins) + ' °C');
+  if (scartoMin >= 4) differenze.push('minime da ' + Math.min(...mins) + ' a ' + Math.max(...mins) + ' °C');
 
   const fasce = {};
   for (const [nome] of FASCE) {
@@ -321,7 +353,7 @@ function rigaGiorno(g, oggi) {
   if (g.pioggia !== null) parti.push('pioggia ' + g.pioggia + '%');
   if (g.mm >= 0.5) parti.push(String(g.mm).replace('.', ',') + ' mm');
   if (g.vento !== null && g.vento >= 25) parti.push('vento fino a ' + g.vento + ' km/h');
-  let r = nomeGiorno(g.data, oggi) + ': ' + parti.join(', ') + '.';
+  let r = nomeGiorno(g.data, oggi) + (g.daOra ? ' (cielo e pioggia dalle ' + g.daOra + ' in poi)' : '') + ': ' + parti.join(', ') + '.';
   const fasce = FASCE.filter(([f]) => g.fasce[f]).map(([f]) => f + ' ' + (NOME_CIELO[g.fasce[f].cielo] || '?') + ' ' + g.fasce[f].t + ' °C');
   if (fasce.length) r += ' ' + fasce.join(', ').replace(/^./, (c) => c.toUpperCase()) + '.';
   const accordo = { alto: 'Fonti concordi', medio: 'Fonti abbastanza concordi', basso: 'Fonti discordi', 'una fonte': 'Una sola fonte' }[g.accordo];
@@ -371,14 +403,11 @@ function breveGiorno(g, oggi) {
     process.exit(0);
   }
 
-  const risposte = await Promise.all(FONTI.map(async (fonte) => {
-    try {
-      const ore = fonte.modello ? await oreOpenMeteo(fonte, luogo, giorni) : await oreMetNo(luogo);
-      return { fonte, ore };
-    } catch (e) {
-      return { fonte, errore: e.message };
-    }
-  }));
+  const [openMeteo, metNo] = await Promise.all([
+    tuttiOpenMeteo(luogo, giorni),
+    oreMetNo(luogo).then((ore) => ({ ore }), (e) => ({ errore: e.message }))
+  ]);
+  const risposte = FONTI.map((fonte) => ({ fonte, ...(fonte.modello ? openMeteo[fonte.id] : metNo) }));
 
   const date = Array.from({ length: giorni }, (_, i) => piuGiorni(oggi, i));
   const fontiOk = [];
@@ -388,7 +417,7 @@ function breveGiorno(g, oggi) {
     if (r.errore) { mancanti.push({ id: r.fonte.id, nome: r.fonte.nome, motivo: r.errore }); continue; }
     let utile = false;
     date.forEach((g, i) => {
-      const dati = riassumiGiorno(r.ore.filter((o) => o.giorno === g));
+      const dati = riassumiGiorno(r.ore.filter((o) => o.giorno === g), i === 0 ? oraLocale(adesso) : 0);
       if (dati) { utile = true; perGiorno[i].push({ fonte: r.fonte, dati }); }
     });
     if (utile) fontiOk.push(r.fonte); else mancanti.push({ id: r.fonte.id, nome: r.fonte.nome, motivo: 'nessun dato per questi giorni' });
@@ -401,7 +430,7 @@ function breveGiorno(g, oggi) {
     process.exit(3);
   }
 
-  const giorniIncrociati = date.map((g, i) => (perGiorno[i].length ? incrocia(g, perGiorno[i]) : null)).filter(Boolean);
+  const giorniIncrociati = date.map((g, i) => (perGiorno[i].length ? Object.assign(incrocia(g, perGiorno[i]), i === 0 && oraLocale(adesso) > 0 ? { daOra: oraLocale(adesso) } : {}) : null)).filter(Boolean);
   const primo = giorniIncrociati[0];
   const verificato = !!primo && primo.nFonti >= MINIMO_INCROCI;
   const ora = adesso.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
