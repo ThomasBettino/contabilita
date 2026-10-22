@@ -10,7 +10,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                     │   ├─ Vendite      legge sync/vendite, dà ordini        │
                     │   ├─ Agenda       Google Calendar in diretta + agenda  │
                     │   ├─ Contabilità  legge sync/contabilita               │
-                    │   ├─ Meteo        legge sync/meteo                     │
+                    │   ├─ Meteo        legge sync/meteo, chiede verifiche   │
                     │   └─ Stelle       legge sync/stelle                    │
                     │  email (Gmail, solo a te) · avvisi · memoria           │
                     └───────────────────────▲────────────────────────────────┘
@@ -19,7 +19,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                      ├─ esegue gli ordini di Agente 1 nell'app Andamento vendite
                      ├─ legge l'artefatto Andamento vendite
                      ├─ legge le stelle in attesa di Un passo alla volta (solo lettura)
-                     ├─ cerca il meteo su più fonti
+                     ├─ incrocia 6 modelli meteo (Open-Meteo, MET Norway)
                      └─ prova lo script Google della contabilità
 ```
 
@@ -35,6 +35,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 - `app/agente-1.html` è il sorgente dell'artefatto Agente 1.
 - `ponte/vendite.js` trasforma l'export di "Andamento vendite" nel riepilogo per lo specialista vendite. I calcoli (fatturato, provvigioni, proiezione, ritmo) sono copiati dalla app v21, quindi i numeri coincidono. Genera anche gli avvisi: richiami, impegni del giorno, impegni entro 90 minuti, saldi della settimana.
 - `ponte/ordini.js` applica all'app vendite gli ordini di Agente 1 (chiamate, note, richiami, appuntamenti, test drive, venduto, perso, pagamenti), con le stesse regole del Coach della app. Rifiuta gli ordini senza un id valido.
+- `ponte/meteo.js` interroga 6 modelli meteo indipendenti (ECMWF, ICON, GFS, Météo-France, ItaliaMeteo ICON-2I tramite Open-Meteo, più MET Norway/yr.no), li incrocia giorno per giorno (mediana delle temperature, cielo più votato, quanto concordano) e scrive le previsioni con i dati per la schermata. Esegue anche gli ordini di verifica del reparto Meteo.
 - `ponte/stelle.js` legge le richieste di stelle in attesa di "Un passo alla volta" e crea un avviso per quelle nuove. Le stelle si confermano solo dall'app, con il pulsante 🔒.
 - `ponte/contabilita.js` legge le fatture dallo script Google della app di contabilità, con gli stessi calcoli della app.
 - `ponte/backup.js` prepara ogni giorno il backup di tutto (vendite, stelle, Agente 1) in `backup/indice` e `backup/parte-<n>`, sovrascrivendo quello del giorno prima. Il codice dello script della contabilità non viene copiato. Alla prima apertura del giorno l'app propone **Salva sul telefono**: un tocco salva `agente1-backup.json`, perché una pagina web non può scrivere sul telefono senza conferma.
@@ -46,7 +47,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 |---|---|---|
 | `sync/vendite`, `sync/meteo`, `sync/contabilita`, `sync/stelle` | Riepiloghi per gli specialisti | Battito |
 | `notifiche/<id>` | Avvisi | Battito e Agente 1 |
-| `ordini/<id>` | Cose da fare nell'app vendite: `{agente, operazione, argomenti, descrizione, stato, esito}` | Agente 1 le crea, il battito le esegue |
+| `ordini/<id>` | Cose da fare: modifiche all'app vendite o verifiche meteo, `{agente, operazione, argomenti, descrizione, stato, esito}` | Agente 1 le crea, il battito le esegue |
 | `config/agenti` | Istruzioni migliorate degli specialisti, con lo storico | Agente 1 (`migliora_agente`) |
 | `config/ponte` | Id dell'attività programmata, per il pulsante Aggiorna | Claude |
 | `data/users/<tu>/chat`, `.../memoria` | Conversazione e cose da ricordare, private | Agente 1 |
@@ -59,6 +60,12 @@ La pagina non può contattare lo script Google, quindi la contabilità passa dal
 2. **Nell'ambiente cloud "Assistente AI":** sotto Accesso di rete, Custom, devono esserci `script.google.com` e `script.googleusercontent.com` tra i domini consentiti. Sono già aggiunti.
 
 Il battito esegue `contabilita.js` con `NODE_USE_ENV_PROXY=1`: senza, il fetch di Node ignora il proxy del container. Se lo script non risponde, il nodo Contabilità mostra "non raggiungibile".
+
+## Meteo: verifica subito e schermata
+
+Chiedi ad Agente 1 per esempio "fai verificare il meteo di domani". Agente 1 lo chiede allo specialista Meteo, che passa un ordine di verifica al battito e lo sveglia subito. Il battito interroga 6 modelli meteo di centri diversi e li incrocia: la previsione conta come verificata solo se almeno 3 fonti rispondono. In 2-4 minuti nella chat compare la **schermata** delle previsioni: il giorno in grande con mattina, pomeriggio e sera, gli incroci fonte per fonte, i giorni dopo e dove le fonti non concordano. Sotto ci sono **Salva immagine** e **Mandamela per email**. Puoi anche chiedere "fammi vedere la schermata del meteo" per le ultime previsioni già verificate.
+
+Il battito deve poter raggiungere `api.open-meteo.com`, `geocoding-api.open-meteo.com` e `api.met.no`: vanno tra i domini consentiti dell'ambiente cloud "Assistente AI", come quelli della contabilità.
 
 ## Limiti da conoscere
 

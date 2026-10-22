@@ -5,7 +5,7 @@
 // stesse validazioni, stessi campi, stesso risultato di una modifica fatta dalla app.
 //
 // Uso: node ordini.js <export-ordini> <export-vendite> <uscita>
-//   <export-ordini>   cartella con ordini/<id>.json: gli ordini presi in carico in questo giro
+//   <export-ordini>   cartella con ordini/<id>.json: gli ordini presi in carico in questo giro (quelli meteo vengono saltati)
 //   <export-vendite>  export di Andamento vendite (trattative/, appuntamenti/, config/impostazioni.json);
 //                     le copie vengono aggiornate, così il riepilogo vendite di questo giro vede le modifiche
 //   <uscita>          scrive ordini-piano.json, scritture/<collezione>/<id>.json e ordini/<id>.json
@@ -139,8 +139,10 @@ function operazioni(nuovoId) {
 /* ---------- Esecuzione ---------- */
 
 const ora = new Date().toISOString();
+// Gli ordini meteo li esegue meteo.js: qui restano fuori, senza esito.
 const ordini = Object.entries(leggiCollezione(path.join(dirOrdini, 'ordini')))
   .map(([id, o]) => ({ id, ...o }))
+  .filter((o) => o.agente !== 'meteo')
   .sort((a, b) => String(a.creato).localeCompare(String(b.creato)));
 
 const scritture = {};
