@@ -54,6 +54,8 @@ function analizza(thread, m) {
   const etichette = m.labelIds || [];
   if (etichette.some((l) => /PROMOTIONS|SOCIAL|SPAM|TRASH/.test(l))) return null;
   const oggetto = pulito(m.subject || thread.subject);
+  // Le risposte automatiche (fuori sede, casella non presidiata) non sono notizie.
+  if (/^(automatic reply|auto[- ]?reply|risposta automatica|out of office|fuori sede|assente)\b/i.test(oggetto)) return null;
   const anteprima = pulito(m.snippet);
   const testo = oggetto + ' ' + anteprima;
   if (!/fattur|nota di credito/i.test(testo)) return null;

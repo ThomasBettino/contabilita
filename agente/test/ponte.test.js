@@ -78,11 +78,12 @@ console.log('posta.js');
     { id: 't1', messages: [{ id: 'm1', date: '2026-10-21T10:00:00Z', sender: 'noreply@gestionale.example', labelIds: ['INBOX'], subject: 'Nuova fattura ricevuta', snippet: 'Hai ricevuto da “AUTO ESEMPIO SRL ” sull&#39;azienda “ROSSI MARIO” la fattura n. 12 / 99 del 2026-10-09. A presto' }] },
     { id: 't2', messages: [{ id: 'm2', date: '2026-10-21T10:00:00Z', sender: 'io@example.com', labelIds: ['SENT'], subject: 'Fattura settembre', snippet: 'ti mando la fattura' }, { id: 'm3', date: '2026-10-21T11:00:00Z', sender: 'Studio Esempio <anna@studio.example>', labelIds: ['INBOX'], subject: 'R: Fattura settembre', snippet: 'Ciao, la fattura di settembre è pronta' }] },
     { id: 't3', messages: [{ id: 'm4', date: '2026-10-21T10:00:00Z', sender: 'shop@negozio.example', labelIds: ['CATEGORY_PROMOTIONS'], subject: 'Fattura gratis', snippet: 'promo' }] },
-    { id: 't4', messages: [{ id: 'm5', date: '2026-10-21T10:00:00Z', sender: 'receipts@servizio.example', labelIds: ['INBOX'], subject: 'Your receipt', snippet: 'Thank you' }] }
+    { id: 't4', messages: [{ id: 'm5', date: '2026-10-21T10:00:00Z', sender: 'receipts@servizio.example', labelIds: ['INBOX'], subject: 'Your receipt', snippet: 'Thank you' }] },
+    { id: 't5', messages: [{ id: 'm6', date: '2026-10-21T10:00:00Z', sender: 'ufficio@ditta.example', labelIds: ['INBOX'], subject: 'Automatic reply: Richiesta data fattura', snippet: 'Grazie per l\'e-mail. Questo indirizzo non è più presidiato.' }] }
   ] });
   esegui('posta.js', [path.join(W, 'thread.json'), path.join(W, 'agente'), path.join(W, 'out'), 'io@example.com']);
   const r = leggi(path.join(W, 'out/righe/contabilita-posta.json'));
-  prova('trova la fattura SdI e quella del commercialista', r.righe.length === 2 && /fattura di ottobre: n\. 12 \/ 99 di Auto Esempio Srl/.test(r.righe[0]) && /settembre da Studio Esempio/.test(r.righe[1]), r.righe);
+  prova('trova la fattura SdI e quella del commercialista, senza risposte automatiche', r.righe.length === 2 && /fattura di ottobre: n\. 12 \/ 99 di Auto Esempio Srl/.test(r.righe[0]) && /settembre da Studio Esempio/.test(r.righe[1]), r.righe);
   fs.cpSync(path.join(W, 'out/posta'), path.join(W, 'agente/posta'), { recursive: true });
   esegui('posta.js', [path.join(W, 'thread.json'), path.join(W, 'agente'), path.join(W, 'out2'), 'io@example.com']);
   prova('non ripete i messaggi già visti', leggi(path.join(W, 'out2/righe/contabilita-posta.json')).righe.length === 0);
