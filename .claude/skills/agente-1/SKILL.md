@@ -12,6 +12,7 @@ description: Mantenere Agente 1, l'assistente personale di Thomas su claude.ai (
 - **Stelle:** artefatto "Un passo alla volta" https://claude.ai/artifact/1JND3NoRY2ae7e8VH6RFyW, app per l'ADHD della ragazza del proprietario. Le richieste di stelle stanno nella collezione `richieste` (`{text, pts, at, name}`); le conferma solo il proprietario dall'app (pulsante 🔒, scrive `decisioni`). **Solo lettura** per Agente 1 e il battito.
 - **Ponte:** `agente/ponte/vendite.js`, `agente/ponte/stelle.js`, `agente/ponte/contabilita.js` e la procedura `agente/ponte/BATTITO.md`.
 - **Battito:** attività programmata `trig_012d788GhKJBKNVePY1YUhKv` ("Battito di Agente 1"), ogni ora dalle 8:07 alle 21:07 ora italiana. Ogni esecuzione è una sessione nuova con notifica push. L'id sta anche in `config/ponte` del database di Agente 1, per il pulsante Aggiorna.
+- **Notifiche delle stelle:** le manda solo il battito di Agente 1. La vecchia attività "Stelle da confermare" (`trig_016JQxVcwLdK8HhSunLkNRAw`) è disattivata su richiesta del proprietario: non riattivarla, altrimenti le notifiche arrivano doppie.
 
 ## Database di Agente 1
 
