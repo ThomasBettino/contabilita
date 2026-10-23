@@ -10,12 +10,16 @@
 //   <export-vendite>   cartella con trattative/*.json dell'app vendite, per riconoscere i clienti
 //   scrive <uscita>/sync/telefono.json e <uscita>/righe/telefono-notifiche.json
 // Uso: node telefono.js query    stampa la query da usare in search_threads
+// Uso: node telefono.js query-vecchie                       stampa la query delle email [Telefono] più vecchie di 2 giorni
+//      node telefono.js cestino <vecchie.json> <email>      stampa gli id dei thread da buttare nel cestino: solo quelli
+//                                                          fatti tutti di email [Telefono] mandate da Thomas
 process.env.TZ = 'Europe/Rome';
 
 const fs = require('node:fs');
 const path = require('node:path');
 
 const QUERY = 'from:me subject:Telefono newer_than:2d';
+const QUERY_VECCHIE = 'from:me subject:Telefono older_than:2d';
 const ORE = 48;
 
 function leggiCartella(dir) {
@@ -73,6 +77,21 @@ const scheda = (c) => c.nome + ' (' + (c.stato === 'aperto' ? 'preventivo' : 've
 
 const args = process.argv.slice(2);
 if (args[0] === 'query') { console.log(QUERY); process.exit(0); }
+if (args[0] === 'query-vecchie') { console.log(QUERY_VECCHIE); process.exit(0); }
+// Pulizia: le email del ponte servono solo 2 giorni, poi vanno nel cestino (Gmail lo svuota da solo dopo 30 giorni).
+// Un thread si butta solo se tutte le sue email sono [Telefono] mandate da Thomas e le vediamo tutte.
+if (args[0] === 'cestino') {
+  const io = String(args[2] || '').toLowerCase();
+  let lista = [];
+  try { const r = JSON.parse(fs.readFileSync(args[1], 'utf8')); lista = Array.isArray(r) ? r : r.threads || (r.payload && r.payload.threads) || []; } catch (e) { lista = []; }
+  const ids = io ? lista.filter((t) => {
+    const msg = (t.messages || []).filter(Boolean);
+    return t.id && msg.length && (!t.messageCount || t.messageCount === msg.length) &&
+      msg.every((m) => String(m.sender || '').toLowerCase().includes(io) && /^\[telefono\]/i.test(pulito(m.subject || t.subject)));
+  }).map((t) => t.id).slice(0, 50) : [];
+  console.log(JSON.stringify(ids));
+  process.exit(0);
+}
 const [fileThread, dirAgente, dirVendite, dirUscita, email] = args;
 if (!fileThread || !dirAgente || !dirUscita || !email) {
   console.error('Uso: node telefono.js <thread.json> <export-agente> <export-vendite> <uscita> <email-di-thomas> | query');

@@ -130,6 +130,14 @@ console.log('telefono.js');
   prova('non ripete le notifiche già viste', leggi(path.join(W, 'out2/righe/telefono-notifiche.json')).righe.length === 0 && leggi(path.join(W, 'out2/sync/telefono.json')).ultime.length === 4);
   scrivi(path.join(W, 'vuoto.json'), { threads: [] });
   esegui('telefono.js', [path.join(W, 'vuoto.json'), path.join(W, 'nessuno'), path.join(W, 'vendite'), path.join(W, 'out3'), 'io@example.com']);
+  scrivi(path.join(W, 'vecchie.json'), { threads: [
+    { id: 'v1', messageCount: 1, messages: [{ id: 'v1', sender: 'io@example.com', subject: '[Telefono] WhatsApp | Mario | 09:00' }] },
+    { id: 'v2', messageCount: 2, messages: [{ id: 'v2', sender: 'io@example.com', subject: '[Telefono] SMS | Banca | 09:01' }, { id: 'v3', sender: 'altro@example.com', subject: 'R: [Telefono] SMS' }] },
+    { id: 'v4', messageCount: 7, messages: [{ id: 'v4', sender: 'io@example.com', subject: '[Telefono] WhatsApp | Anna | 09:02' }] },
+    { id: 'v5', messageCount: 1, messages: [{ id: 'v5', sender: 'io@example.com', subject: 'Preventivo telefono nuovo' }] }
+  ] });
+  const cestino = JSON.parse(esegui('telefono.js', ['cestino', path.join(W, 'vecchie.json'), 'io@example.com']));
+  prova('nel cestino solo le email [Telefono] di Thomas, viste tutte', JSON.stringify(cestino) === '["v1"]' && /older_than:2d/.test(esegui('telefono.js', ['query-vecchie'])), cestino);
   prova('senza MacroDroid dice che il telefono non è collegato', leggi(path.join(W, 'out3/sync/telefono.json')).collegato === false);
 }
 
