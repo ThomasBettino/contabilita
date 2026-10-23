@@ -44,7 +44,8 @@ function notifica(m, t) {
   const oggetto = pulito(m.subject || t.subject);
   const r = /^\[telefono\]\s*(.*)$/i.exec(oggetto);
   if (!r) return null;
-  const parti = r[1].split(/\s+\|\s+/);
+  // Separatore "|", con o senza spazi; un titolo vuoto resta vuoto.
+  const parti = r[1].split(/\s*\|\s*/);
   const app = (parti[0] || 'App').trim();
   // Le notifiche di Gmail e di MacroDroid non si inoltrano: creerebbero un giro senza fine.
   if (/^(gmail|macrodroid)$/i.test(app)) return null;

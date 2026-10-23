@@ -114,7 +114,7 @@ console.log('telefono.js');
   const mia = (id, oggetto, testo, min, da) => ({ id, threads: undefined, messages: [{ id, date: ora(min), sender: da || 'Io <io@example.com>', subject: oggetto, snippet: testo }] });
   scrivi(path.join(W, 'thread.json'), { threads: [
     mia('n1', '[Telefono] WhatsApp | Mario Bianchi | 10:01', 'Buongiorno, la C3 è ancora disponibile?', 50),
-    mia('n2', '[Telefono] Telefono | Chiamata persa | 10:05', 'Laura Verdi', 40),
+    mia('n2', '[Telefono] Telefono|Chiamata persa|10:05', 'Laura Verdi', 40),
     mia('n3', '[Telefono] Banca | Codice di verifica | 10:06', 'Il tuo codice è 123456, non condividerlo', 39),
     mia('n4', '[Telefono] WhatsApp | Alessandro | 10:07', 'Ci vediamo stasera?', 38),
     mia('n5', '[Telefono] Gmail | Io | 10:08', '[Telefono] WhatsApp', 37),
