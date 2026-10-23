@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ada</title>
+<meta name="theme-color" content="#060A14">
+<meta name="color-scheme" content="dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="hub.css">
+</head>
+<body>
+<div class="sfondo" aria-hidden="true"></div>
+
+<header class="testa">
+  <div class="orb" id="orb" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="id">
+    <h1>Ada</h1>
+    <p id="stato-ada">Mi sto svegliando…</p>
+  </div>
+  <div class="kpi-testa">
+    <button class="pillola" data-vai="approvazioni" id="pill-appr" hidden></button>
+  </div>
+</header>
+
+<main>
+  <section id="v-ada" class="vista">
+    <div class="msgs" id="msgs" aria-live="polite"></div>
+    <div class="suggerimenti" id="sugg">
+      <button type="button">Com'è andata oggi?</button>
+      <button type="button">Dove spendo di più?</button>
+      <button type="button">Cosa hai migliorato?</button>
+      <button type="button">Cosa devo decidere?</button>
+    </div>
+    <form class="scrivi" id="form-chat" autocomplete="off">
+      <input id="testo" type="text" placeholder="Scrivi ad Ada…" enterkeyhint="send" aria-label="Messaggio per Ada" maxlength="2000">
+      <button type="submit" id="invia" aria-label="Invia"><svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-6-8-2z"/></svg></button>
+    </form>
+  </section>
+
+  <section id="v-team" class="vista" hidden>
+    <h2>Il team di Ada</h2>
+    <p class="nota">Ognuno ha un prompt che Ada può migliorare. Tocca un assistente per vederlo o segnalare un problema.</p>
+    <div class="griglia" id="team"></div>
+  </section>
+
+  <section id="v-approvazioni" class="vista" hidden>
+    <h2>Da approvare</h2>
+    <p class="nota">Pagamenti e modifiche grandi aspettano sempre te. Ada non muove mai denaro: se approvi un pagamento, lo registra e il pagamento resta a mano.</p>
+    <div class="lista" id="appr"></div>
+  </section>
+
+  <section id="v-registro" class="vista" hidden>
+    <h2>Registro</h2>
+    <div class="riga-azioni">
+      <button class="primario" id="btn-ciclo" type="button">Avvia ciclo di miglioramento</button>
+    </div>
+    <h3>Miglioramenti</h3>
+    <div class="lista" id="migl"></div>
+    <h3>Attività recente</h3>
+    <div class="lista compatta" id="att"></div>
+  </section>
+
+  <section id="v-soldi" class="vista" hidden>
+    <h2>Soldi</h2>
+    <p class="nota" id="soldi-periodo"></p>
+    <div class="tessere" id="tessere"></div>
+    <h3>Uscite per categoria</h3>
+    <div class="barre" id="cat"></div>
+    <h3>Dove va di più</h3>
+    <div class="lista compatta" id="esercenti"></div>
+    <h3>Ultimi movimenti</h3>
+    <div class="lista compatta" id="ultimi"></div>
+  </section>
+</main>
+
+<nav class="barra" aria-label="Sezioni">
+  <button data-vai="ada" class="attiva"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Ada</span></button>
+  <button data-vai="team"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M2 19c0-3 3-5 6-5s6 2 6 5M14.5 15.2c2.8-.6 7.5.4 7.5 3.8"/></svg><span>Team</span></button>
+  <button data-vai="approvazioni"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span>Approva</span><b id="badge-appr" hidden></b></button>
+  <button data-vai="registro"><svg viewBox="0 0 24 24"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg><span>Registro</span></button>
+  <button data-vai="soldi"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 8-9M3 21h18"/></svg><span>Soldi</span></button>
+</nav>
+
+<dialog id="dlg">
+  <form method="dialog" class="dlg-testa"><h3 id="dlg-titolo"></h3><button aria-label="Chiudi">✕</button></form>
+  <p class="nota" id="dlg-descr"></p>
+  <pre id="dlg-prompt"></pre>
+  <div id="dlg-migl" class="lista compatta"></div>
+  <form id="form-feedback" class="feedback">
+    <textarea id="fb-testo" rows="3" placeholder="Cosa non va? Ada lo annota e corregge il prompt se serve." maxlength="500"></textarea>
+    <button class="primario" type="submit">Segnala ad Ada</button>
+  </form>
+</dialog>
+
+<div id="toast" role="status"></div>
+<script src="hub.js"></script>
+</body>
+</html>

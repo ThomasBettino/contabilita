@@ -15,6 +15,8 @@ Decisioni:
 - **Dispositivo:** il tuo telefono personale. Rischi: l'agente vede tutto (chat, foto) e può intralciare l'uso normale. Mitigazioni: tasto di arresto immediato, log di ogni azione, lavoro in momenti che scegli tu.
 - **Attivazione:** sempre attivo (controlla a intervalli fatture, notifiche, scadenze) e a comando (esegue subito ciò che gli scrivi su un canale di chat).
 
+- **Ada e l'hub (costruito):** app web in `app/` servita da `src/ada/server.py`. Ada è il capo; la chat è la sua interfaccia, le altre schede mostrano team, approvazioni, registro e soldi. I confini sono nel codice: i pagamenti sono sempre solo richieste (nessun pagamento parte), le modifiche ai prompt si classificano per dimensione (piccole subito, grandi con ok), massimo 3 piccole al giorno per agente. I prompt vivi stanno in `~/ada/agenti/` con storico e annullamento nel database, al posto della cronologia git prevista all'inizio.
+
 Dove questa sezione contraddice quelle sotto, vale questa.
 
 

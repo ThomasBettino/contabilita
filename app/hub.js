@@ -1,0 +1,204 @@
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const eur = (n) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n || 0);
+const quando = (ts) => new Date(ts * 1000).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+/* Elementi creati con textContent: nessun testo di Ada o dei dati finisce mai come HTML. */
+function h(tag, attrs, ...figli) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const f of figli.flat()) if (f != null) el.append(f.nodeType ? f : document.createTextNode(String(f)));
+  return el;
+}
+const svuota = (el, ...nuovi) => el.replaceChildren(...nuovi.flat());
+
+function leggiToken() { try { return localStorage.getItem("ada_token") || ""; } catch (e) { return ""; } }
+function salvaToken(t) { try { localStorage.setItem("ada_token", t); } catch (e) { /* storage bloccato */ } }
+
+async function api(path, dati) {
+  const intest = { Authorization: "Bearer " + leggiToken() };
+  const opz = { headers: intest };
+  if (dati !== undefined) { opz.method = "POST"; opz.headers["Content-Type"] = "application/json"; opz.body = JSON.stringify(dati); }
+  let r = await fetch(path, opz);
+  if (r.status === 401) {
+    const t = prompt("Inserisci il token di accesso di Ada");
+    if (!t) throw new Error("Accesso negato");
+    salvaToken(t); intest.Authorization = "Bearer " + t;
+    r = await fetch(path, opz);
+  }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.errore || "Errore " + r.status);
+  return j;
+}
+
+let toastT;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("su");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("su"), 3200);
+}
+
+/* ---------- navigazione ---------- */
+function vai(nome) {
+  document.querySelectorAll(".vista").forEach((v) => (v.hidden = v.id !== "v-" + nome));
+  document.querySelectorAll(".barra button").forEach((b) => b.classList.toggle("attiva", b.dataset.vai === nome));
+  if (nome === "ada") scorriChat();
+}
+document.querySelectorAll("[data-vai]").forEach((b) => b.addEventListener("click", () => vai(b.dataset.vai)));
+
+/* ---------- chat ---------- */
+function scorriChat() { const m = $("msgs"); m.scrollTop = m.scrollHeight; }
+function bolla(ruolo, testo, extra) { return h("div", { class: "msg " + ruolo + (extra ? " " + extra : "") }, testo); }
+
+async function caricaChat() {
+  const { messaggi } = await api("/api/chat");
+  svuota($("msgs"), messaggi.length
+    ? messaggi.map((m) => bolla(m.ruolo, m.testo))
+    : h("div", { class: "vuoto" }, "Ciao, sono Ada. Gestisco io il team: dimmi cosa ti serve, oppure chiedimi come sta andando tutto."));
+  scorriChat();
+}
+
+async function manda(testo) {
+  testo = testo.trim();
+  if (!testo) return;
+  const inp = $("testo"), btn = $("invia"), msgs = $("msgs");
+  inp.value = ""; inp.disabled = btn.disabled = true;
+  msgs.querySelector(".vuoto")?.remove();
+  msgs.append(bolla("utente", testo));
+  const pensa = bolla("ada", "Ci penso…", "pensa");
+  msgs.append(pensa); scorriChat();
+  $("orb").classList.add("pensa");
+  try {
+    const { risposta } = await api("/api/chat", { messaggio: testo });
+    pensa.className = "msg ada"; pensa.textContent = risposta;
+  } catch (e) {
+    pensa.className = "msg ada"; pensa.textContent = "Non riesco a rispondere: " + e.message;
+  } finally {
+    $("orb").classList.remove("pensa");
+    inp.disabled = btn.disabled = false; scorriChat();
+    aggiorna();
+  }
+}
+$("form-chat").addEventListener("submit", (e) => { e.preventDefault(); manda($("testo").value); });
+$("sugg").addEventListener("click", (e) => { if (e.target.tagName === "BUTTON") manda(e.target.textContent); });
+
+/* ---------- stato ---------- */
+let titoli = {};
+const nome = (id) => titoli[id] || id;
+
+function disegna(s) {
+  titoli = Object.fromEntries(s.agenti.map((a) => [a.nome, a.titolo]));
+  $("orb").classList.toggle("spenta", !s.ada.cervello);
+  $("stato-ada").textContent = !s.ada.cervello
+    ? "Cervello non collegato"
+    : s.approvazioni.length ? `${s.approvazioni.length} cose aspettano te`
+    : s.segnalazioni_aperte ? `${s.segnalazioni_aperte} problemi da sistemare`
+    : "Tutto sotto controllo";
+  const n = s.approvazioni.length;
+  $("badge-appr").hidden = $("pill-appr").hidden = !n;
+  $("badge-appr").textContent = n;
+  $("pill-appr").textContent = n + " da approvare";
+
+  svuota($("team"), s.agenti.map((a) => h("button", { class: "card", type: "button", onclick: () => apriAgente(a) },
+    h("span", { class: "stato" + (a.attivo ? " attivo" : "") }, a.attivo ? "al lavoro" : "pronto"),
+    h("b", null, a.titolo), h("small", null, a.descrizione),
+    h("div", null,
+      a.segnalazioni_aperte ? h("span", { class: "tag warn" }, a.segnalazioni_aperte + (a.segnalazioni_aperte === 1 ? " segnalazione " : " segnalazioni ")) : null,
+      a.versioni ? h("span", { class: "tag ok" }, "v" + (a.versioni + 1)) : null))));
+
+  svuota($("appr"), n ? s.approvazioni.map(cartaApprovazione) : h("div", { class: "vuoto" }, "Niente da approvare. Ti avviso io quando serve."));
+  svuota($("migl"), s.miglioramenti.length ? s.miglioramenti.map(cartaMiglioramento) : h("div", { class: "vuoto" }, "Ancora nessun miglioramento: partirò quando emergono problemi."));
+  svuota($("att"), s.attivita.length ? s.attivita.map((x) => h("div", { class: "voce" },
+    h("span", null, h("b", null, nome(x.agente)), " · ", x.azione, x.dettaglio ? " — " + x.dettaglio : ""),
+    h("span", { class: "meta" }, quando(x.ts)))) : h("div", { class: "vuoto" }, "Nessuna attività registrata."));
+  disegnaSoldi(s.soldi);
+}
+
+function cartaApprovazione(a) {
+  const d = a.dettaglio || {};
+  const decidi = (esito) => async () => {
+    try { await api("/api/approvazioni/" + a.id, { esito }); toast(esito === "approva" ? "Approvato" : "Rifiutato"); aggiorna(); }
+    catch (e) { toast(e.message); }
+  };
+  return h("div", { class: "voce" },
+    h("div", null, h("span", { class: "tag " + (a.tipo === "pagamento" ? "bad" : "warn") }, a.tipo === "pagamento" ? "Soldi" : a.tipo === "prompt" ? "Modifica grande" : "Altro")),
+    h("b", null, a.titolo),
+    d.testo ? h("span", null, d.testo) : d.motivo ? h("span", null, d.motivo) : null,
+    d.importo != null ? h("span", { class: "importo" }, eur(d.importo)) : null,
+    h("span", { class: "meta" }, quando(a.ts)),
+    h("div", { class: "azioni" },
+      h("button", { class: "ok-btn", type: "button", onclick: decidi("approva") }, "Approva"),
+      h("button", { class: "no-btn", type: "button", onclick: decidi("rifiuta") }, "Rifiuta")));
+}
+
+function cartaMiglioramento(m) {
+  const colore = { applicato: "ok", annullato: "", rifiutato: "bad", in_attesa: "warn" }[m.stato] || "";
+  const annulla = async () => {
+    try { await api(`/api/miglioramenti/${m.id}/annulla`, {}); toast("Modifica annullata"); aggiorna(); }
+    catch (e) { toast(e.message); }
+  };
+  return h("div", { class: "voce" },
+    h("div", null, h("span", { class: "tag " + colore }, m.stato.replace("_", " ")), " ", h("span", { class: "tag" }, m.tipo)),
+    h("b", null, nome(m.agente)), h("span", null, m.motivo), h("span", { class: "meta" }, quando(m.ts)),
+    m.stato === "applicato" ? h("div", { class: "azioni" }, h("button", { class: "secondario", type: "button", onclick: annulla }, "Annulla modifica")) : null);
+}
+
+function disegnaSoldi(s) {
+  $("soldi-periodo").textContent = s.movimenti
+    ? `Mese ${s.periodo} · ${s.movimenti} movimenti letti dalle notifiche Revolut`
+    : "Ancora nessun movimento: appena lo script legge le notifiche di Revolut compaiono qui.";
+  svuota($("tessere"),
+    [["Entrate", s.entrate, "pos"], ["Uscite", s.uscite, "neg"], ["Saldo", s.saldo, s.saldo >= 0 ? "pos" : "neg"]]
+      .map(([t, v, c]) => h("div", { class: "tessera" }, h("small", null, t), h("b", { class: "importo " + c }, eur(v)))));
+  const max = Math.max(1, ...s.per_categoria.map((c) => c.totale));
+  svuota($("cat"), s.per_categoria.map((c) => {
+    const i = h("i"); i.style.width = Math.round((c.totale / max) * 100) + "%";
+    return h("div", { class: "barra-riga" }, h("div", null, h("span", null, c.nome), h("b", null, eur(c.totale))), h("div", { class: "traccia" }, i));
+  }));
+  svuota($("esercenti"), s.top_esercenti.map((e) => h("div", { class: "voce" }, h("span", null, e.nome), h("span", { class: "importo neg" }, eur(e.totale)))));
+  svuota($("ultimi"), s.ultimi.map((m) => h("div", { class: "voce" },
+    h("span", null, m.controparte || "(senza nome)", h("br"), h("span", { class: "meta" }, m.quando)),
+    h("span", { class: "importo " + (m.importo < 0 ? "neg" : "pos") }, eur(m.importo)))));
+}
+
+/* ---------- dettaglio agente ---------- */
+let agenteAperto = null;
+async function apriAgente(a) {
+  agenteAperto = a.nome;
+  $("dlg-titolo").textContent = a.titolo; $("dlg-descr").textContent = a.descrizione;
+  $("dlg-prompt").textContent = "Carico…"; svuota($("dlg-migl"));
+  $("dlg").showModal();
+  try {
+    const d = await api("/api/agenti/" + a.nome);
+    $("dlg-prompt").textContent = d.prompt;
+    svuota($("dlg-migl"), d.miglioramenti.map((m) => h("div", { class: "voce" },
+      h("span", null, m.motivo), h("span", { class: "tag" }, m.stato))));
+  } catch (e) { $("dlg-prompt").textContent = e.message; }
+}
+$("form-feedback").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const testo = $("fb-testo").value.trim();
+  if (!testo || !agenteAperto) return;
+  try { await api("/api/feedback", { agente: agenteAperto, testo }); $("fb-testo").value = ""; $("dlg").close(); toast("Segnalato. Ada se ne occupa."); aggiorna(); }
+  catch (err) { toast(err.message); }
+});
+
+$("btn-ciclo").addEventListener("click", async (e) => {
+  e.target.disabled = true; $("orb").classList.add("pensa"); toast("Ada sta rivedendo il team…");
+  try { const r = await api("/api/ciclo", {}); toast(r.risposta.slice(0, 120)); caricaChat(); }
+  catch (err) { toast(err.message); }
+  finally { e.target.disabled = false; $("orb").classList.remove("pensa"); aggiorna(); }
+});
+
+async function aggiorna() {
+  try { disegna(await api("/api/stato")); }
+  catch (e) { $("stato-ada").textContent = "Non riesco a raggiungere Ada"; }
+}
+
+caricaChat().catch(() => {});
+aggiorna();
+setInterval(() => { if (!document.hidden) aggiorna(); }, 20000);
