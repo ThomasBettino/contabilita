@@ -38,3 +38,17 @@ Scrive in `movimenti.db` e stampa un riepilogo delle uscite per esercente.
 - Il parser è scritto su formati ipotizzati: i testi reali di Revolut possono essere diversi.
 - Android conserva solo le notifiche ancora presenti nella tendina: lo script va lanciato spesso (poi lo schedulo).
 - Nessuna azione sul denaro: questo script legge soltanto.
+
+## Lettura automatica ogni 15 minuti (Termux)
+
+```
+git pull
+chmod +x scripts/ingest.sh
+termux-job-scheduler -s ~/contabilita/scripts/ingest.sh --period-ms 900000 --persisted true --job-id 1
+```
+
+- Controlla che sia attivo: `termux-job-scheduler --pending`
+- Ferma: `termux-job-scheduler --cancel --job-id 1`
+- Vedi cosa ha fatto: `tail ~/ingest.log`
+- I movimenti stanno in `~/movimenti.db` (fuori dal repo, mai su GitHub).
+- 15 minuti è il minimo che Android permette. Se cancelli una notifica prima, il movimento non viene letto.
