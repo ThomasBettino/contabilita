@@ -154,12 +154,14 @@ function disegna(s) {
   disegnaSoldi(s.soldi);
   disegnaRoutine(s.routine || [], s.consumo);
   disegnaFatture(s.fatture || {});
-  disegnaIdee(s.idee || []);
+  disegnaIdee(s.idee || [], s.github);
+  disegnaSviluppo(s.github, s.versione);
 }
 
-const STATO_IDEA = { proposta: ["in attesa del tuo ok", "warn"], approvata: ["approvata: da realizzare", "ok"], fatta: ["realizzata", "ok"], rifiutata: ["rifiutata", "bad"] };
+const STATO_IDEA = { proposta: ["in attesa del tuo ok", "warn"], approvata: ["approvata: da realizzare", "ok"],
+  in_sviluppo: ["in sviluppo su GitHub", "ok"], fatta: ["realizzata", "ok"], rifiutata: ["rifiutata", "bad"] };
 
-function disegnaIdee(idee) {
+function disegnaIdee(idee, gh) {
   svuota($("idee"), idee.length ? idee.map((i) => {
     const [testo, colore] = STATO_IDEA[i.stato] || [i.stato, ""];
     const copia = async () => {
@@ -169,15 +171,66 @@ function disegnaIdee(idee) {
     const fatta = async () => {
       try { await api(`/api/idee/${i.id}/fatta`, {}); toast("Segnata come realizzata"); aggiorna(); } catch (e) { toast(e.message); }
     };
+    const pubblica = async (e) => {
+      e.target.disabled = true; toast("Invio l'idea allo sviluppo…");
+      try { const r = await api(`/api/idee/${i.id}/pubblica`, {}); toast(r.messaggio); aggiorna(); }
+      catch (err) { toast(err.message); }
+      finally { e.target.disabled = false; }
+    };
+    const azioni = [];
+    if (i.stato === "approvata" && gh && gh.configurato && !i.issue_numero)
+      azioni.push(h("button", { class: "secondario", type: "button", onclick: pubblica }, "Invia allo sviluppo"));
+    if (i.issue_numero && soloHttps(i.issue_url))
+      azioni.push(h("a", { class: "secondario collegamento", href: i.issue_url, target: "_blank", rel: "noopener" }, `Apri su GitHub #${i.issue_numero}`));
+    if (i.stato === "approvata" || i.stato === "in_sviluppo") {
+      azioni.push(h("button", { class: "secondario", type: "button", onclick: copia }, "Copia il testo"));
+      azioni.push(h("button", { class: "secondario", type: "button", onclick: fatta }, "Fatta"));
+    }
     return h("div", { class: "voce" },
       h("div", null, h("span", { class: "tag " + colore }, testo)),
       h("b", null, i.titolo), h("span", null, i.descrizione),
       h("span", { class: "meta" }, `Perché: ${i.motivo} · ${quando(i.ts)}`),
-      i.stato === "approvata" ? h("div", { class: "azioni" },
-        h("button", { class: "secondario", type: "button", onclick: copia }, "Copia il testo per lo sviluppo"),
-        h("button", { class: "secondario", type: "button", onclick: fatta }, "Fatta")) : null);
+      azioni.length ? h("div", { class: "azioni ripiega" }, azioni) : null);
   }) : h("div", { class: "vuoto" }, "Ancora nessuna idea: ogni mattina Ada ne valuta una nuova."));
 }
+
+function disegnaSviluppo(gh, v) {
+  gh = gh || {}; v = v || {};
+  $("versione").textContent = v.id && v.id !== "?" ? `Versione ${v.id} · ${v.data} · ${v.titolo}` : "Versione non leggibile.";
+  $("btn-aggiorna").disabled = !gh.token_attivo;
+  $("btn-aggiorna").title = gh.token_attivo ? "" : "Serve prima il token di accesso (docs/GITHUB.md)";
+  $("form-github").hidden = !!gh.configurato || !gh.token_attivo;
+  if (!$("gh-repo").value) $("gh-repo").value = gh.repo || "";
+  $("gh-nota").textContent = gh.configurato
+    ? `GitHub collegato a ${gh.repo}: ogni idea approvata apre un problema che avvia lo sviluppo, e la modifica entra solo se la approvi tu.`
+    : gh.token_attivo ? "GitHub non collegato: incolla qui sotto il repository e il codice di accesso, e ogni idea approvata partirà da sola allo sviluppo."
+    : "Per collegare GitHub e aggiornare l'app serve prima un token di accesso: vedi docs/GITHUB.md.";
+}
+
+$("form-github").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const repo = $("gh-repo").value.trim(), token = $("gh-token").value.trim();
+  if (!repo || !token) return;
+  const btn = e.target.querySelector("button"); btn.disabled = true; toast("Provo il collegamento…");
+  try {
+    const j = await api("/api/impostazioni/github", { repo, token });
+    $("gh-token").value = "";
+    toast(j.privato ? `GitHub collegato a ${j.repo}` : `Collegato, ma ${j.repo} è PUBBLICO: le idee saranno visibili a tutti`);
+    aggiorna();
+  } catch (err) { toast(err.message); }
+  finally { btn.disabled = false; }
+});
+
+$("btn-aggiorna").addEventListener("click", async (e) => {
+  if (!confirm("Scarico l'ultima versione, la collaudo e riavvio Ada. Se i test falliscono torno alla versione di prima. Procedo?")) return;
+  e.target.disabled = true; toast("Aggiorno… può volerci un minuto");
+  try {
+    const r = await api("/api/aggiorna", {});
+    toast(r.messaggio);
+    if (r.cambiato) setTimeout(() => location.reload(), 6000);  // il tempo di riavviarsi
+  } catch (err) { toast(err.message); }
+  finally { e.target.disabled = false; }
+});
 
 const STATO_FATTURA = { inviata: "Mandata a Giulia", fatturata: "Fatturata · attesa bonifico", incassata: "Bonifico arrivato" };
 const soloHttps = (u) => typeof u === "string" && /^https:\/\//.test(u);

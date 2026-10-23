@@ -12,6 +12,7 @@ import threading
 import time
 
 from .agenti import AGENTI
+from .github import ErroreGitHub, corpo_issue
 from .soldi import NOMI_CATEGORIE
 from .llm import ErroreLLM
 from .pianificatore import PREDEFINITE, prossima_esecuzione
@@ -26,6 +27,9 @@ LIMITE_TOKEN = int(os.environ.get("ADA_LIMITE_TOKEN", "400000"))  # tetto giorna
 PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
 MAX_REGOLE = 80
 MAX_IDEE_APERTE = 6
+IDEE_APERTE = "('proposta','approvata','in_sviluppo')"
+# Un'idea approvata diventa un problema su GitHub, che può essere visibile: niente dati personali.
+DATI_PRIVATI = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+|\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b|\d[\d.,]*\s?(?:€|euro?\b)|€\s?\d|\b\d{9,}\b", re.I)
 
 # Fissato nel codice (non in un prompt che Ada può riscrivere): il capo decide e agisce.
 MANDATO = """COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se una opzione è chiaramente la migliore, non elencarne tre."""
@@ -121,6 +125,7 @@ class Ada:
         self.automatico = False   # vero durante una routine: niente schermo senza l'utente
         self.notifica = None      # funzione(titolo, testo, id) impostata dal server
         self.archivio = None      # archivio fatture P.IVA (src/ada/fatture.py)
+        self.github = None        # collegamento GitHub per le idee approvate (src/ada/github.py)
         self.soldi.regole = {r["parola"]: r["categoria"] for r in self.db.tutti("SELECT parola, categoria FROM regole_categoria")}
 
     # ---------- utilità ----------
@@ -279,8 +284,11 @@ class Ada:
             else:
                 self.db.esegui("UPDATE miglioramenti SET stato='rifiutato' WHERE id=?", (mid,))
         elif a["tipo"] == "idea":
+            idea_id = json.loads(a["dettaglio"])["idea_id"]
             self.db.esegui("UPDATE idee SET stato=?, ts_stato=? WHERE id=?",
-                           ("approvata" if ok else "rifiutata", int(time.time()), json.loads(a["dettaglio"])["idea_id"]))
+                           ("approvata" if ok else "rifiutata", int(time.time()), idea_id))
+            if ok:
+                self._pubblica_idea(idea_id)
         elif a["tipo"] == "incasso":
             if ok and self.archivio:
                 self.archivio.segna_incassata(json.loads(a["dettaglio"])["fattura_id"], da="utente")
@@ -552,7 +560,7 @@ class Ada:
         righe += [f"SEGNALAZIONI APERTE: {len(seg)}"] + [f"- #{s['id']} {s['agente']}: {s['problema']}" for s in seg]
         righe += ["ROUTINE:"] + [f"- {r['nome']} ({'attiva' if r['attiva'] else 'spenta'}), ultima: {r['esito'] or 'mai eseguita'}"
                                  for r in rou]
-        idee = self.db.tutti("SELECT titolo, stato FROM idee WHERE ts>? OR stato IN ('proposta','approvata') ORDER BY id DESC LIMIT 12",
+        idee = self.db.tutti(f"SELECT titolo, stato FROM idee WHERE ts>? OR stato IN {IDEE_APERTE} ORDER BY id DESC LIMIT 12",
                              (ora - 30 * 86400,))
         righe += ["IDEE (ultimi 30 giorni e aperte):"] + [f"- {i['titolo']} [{i['stato']}]" for i in idee]
         attivita = self.db.tutti("SELECT ts, agente, azione, dettaglio FROM attivita ORDER BY id DESC LIMIT 15")
@@ -566,13 +574,16 @@ class Ada:
         titolo, desc, motivo = (str(args.get(k, "")).strip() for k in ("titolo", "descrizione", "motivo"))
         if not 8 <= len(titolo) <= 100 or not 30 <= len(desc) <= 800 or len(motivo) < 10:
             return "Servono titolo (8-100 caratteri), descrizione (30-800) e un motivo concreto."
+        if DATI_PRIVATI.search(f"{titolo} {desc} {motivo}"):
+            return ("L'idea può finire su GitHub: non deve contenere importi, email, IBAN o altri dati personali. "
+                    "Riformulala in modo generale, senza cifre.")
         ora = int(time.time())
         lt = time.localtime(ora)
         inizio_giorno = int(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
         oggi = self.db.uno("SELECT titolo FROM idee WHERE ts>=?", (inizio_giorno,))
         if oggi:
             return f"Una idea nuova al giorno: oggi hai già proposto «{oggi['titolo']}»."
-        if self.db.uno("SELECT COUNT(*) AS n FROM idee WHERE stato IN ('proposta','approvata')")["n"] >= MAX_IDEE_APERTE:
+        if self.db.uno(f"SELECT COUNT(*) AS n FROM idee WHERE stato IN {IDEE_APERTE}")["n"] >= MAX_IDEE_APERTE:
             return "Ci sono già troppe idee aperte: aspetta che l'utente ne chiuda qualcuna."
         for i in self.db.tutti("SELECT titolo FROM idee WHERE ts>?", (ora - 60 * 86400,)):
             if difflib.SequenceMatcher(None, i["titolo"].lower(), titolo.lower()).ratio() > 0.8:
@@ -587,8 +598,35 @@ class Ada:
         self._avvisa_attesa()
         return f"Idea #{cur.lastrowid} proposta all'utente."
 
+    def _pubblica_idea(self, id_):
+        """Apre il problema su GitHub: da lì parte lo sviluppo. Se non riesce, l'idea resta approvata e si riprova."""
+        i = self.db.uno("SELECT * FROM idee WHERE id=?", (id_,))
+        if not i or i["issue_numero"] or i["stato"] not in ("approvata", "in_sviluppo"):
+            return "Niente da pubblicare."
+        if not self.github or not self.github.configurato:
+            return "GitHub non collegato: l'idea resta approvata."
+        try:
+            r = self.github.crea_issue(f"[Idea di Ada] {i['titolo']}", corpo_issue(i))
+        except ErroreGitHub as e:
+            self.log("sistema", "errore", f"pubblicazione idea su GitHub: {e}")
+            return f"Non sono riuscita a pubblicare su GitHub ({e})."
+        self.db.esegui("UPDATE idee SET issue_numero=?, issue_url=?, stato='in_sviluppo', ts_stato=? WHERE id=?",
+                       (r["numero"], r["url"], int(time.time()), id_))
+        self.log("ada", "idea inviata allo sviluppo", f"{i['titolo']} (#{r['numero']})")
+        self.avvisa("Idea inviata allo sviluppo", "Claude sta preparando la modifica: la rivedi tu prima che entri.", "ada-sviluppo")
+        return f"Inviata allo sviluppo: problema #{r['numero']}."
+
+    def pubblica_idea(self, id_):
+        i = self.db.uno("SELECT stato, issue_numero FROM idee WHERE id=?", (id_,))
+        if not i or i["stato"] != "approvata" or i["issue_numero"]:
+            raise ValueError("Idea non trovata, non approvata o già inviata.")
+        esito = self._pubblica_idea(id_)
+        if not esito.startswith("Inviata"):
+            raise ValueError(esito)
+        return esito
+
     def idea_fatta(self, id_):
-        r = self.db.uno("SELECT titolo FROM idee WHERE id=? AND stato='approvata'", (id_,))
+        r = self.db.uno("SELECT titolo FROM idee WHERE id=? AND stato IN ('approvata','in_sviluppo')", (id_,))
         if not r:
             raise ValueError("Idea non trovata o non approvata.")
         self.db.esegui("UPDATE idee SET stato='fatta', ts_stato=? WHERE id=?", (int(time.time()), id_))
