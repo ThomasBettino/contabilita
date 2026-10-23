@@ -14,9 +14,11 @@ PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
 PREDEFINITE = [
     {"nome": "riepilogo_sera", "descrizione": "Riepilogo della giornata: spese, cose da decidere, miglioramenti.",
      "tipo": "ada", "ora": "21:00", "ogni_min": None,
-     "prompt": ("Prepara il riepilogo della giornata per l'utente. Usa riepilogo_spese per i dati reali, controlla cosa "
-                "aspetta una sua decisione e le segnalazioni aperte. Massimo 6 righe, numeri veri, al massimo una cosa da "
-                "fare. Se non c'è niente di rilevante, dillo in una riga.")},
+     "prompt": ("Prepara il riepilogo della giornata per l'utente. Usa riepilogo_spese per i dati reali (indica anche "
+                "l'ora dell'ultimo movimento letto) e stato_sistema per sapere cosa aspetta una sua decisione e quali "
+                "segnalazioni sono aperte. Massimo 6 righe, numeri veri, al massimo una cosa da fare. Non parlare del "
+                "collegamento dello schermo del telefono: è normale che sia spento e non riguarda i movimenti. Se non c'è "
+                "niente di rilevante, dillo in una riga.")},
     {"nome": "miglioramento", "descrizione": "Rivede le segnalazioni aperte e migliora i prompt (solo se ce ne sono).",
      "tipo": "codice", "ora": None, "ogni_min": 360, "prompt": None},
     {"nome": "promemoria_approvazioni", "descrizione": "Ti ricorda con una notifica le cose ferme in attesa di te.",
@@ -51,6 +53,9 @@ class Pianificatore:
                            "VALUES (?,?,?,?,?,?,?)",
                            (r["nome"], r["descrizione"], r["tipo"], r["ora"], r["ogni_min"], r["prompt"],
                             prossima_esecuzione(r["ora"], r["ogni_min"], self.adesso())))
+            # le routine di sistema non le modifica Ada: si tengono allineate al codice a ogni avvio
+            self.db.esegui("UPDATE routine SET descrizione=?, tipo=?, prompt=? WHERE nome=?",
+                           (r["descrizione"], r["tipo"], r["prompt"], r["nome"]))
 
     def elenco(self):
         return self.db.tutti("SELECT id, nome, descrizione, tipo, ora, ogni_min, attiva, prossima, ultima, esito "

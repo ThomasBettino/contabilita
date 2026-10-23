@@ -109,6 +109,38 @@ class TestPianificatore(Base):
         self.assertIsNotNone(c.db.uno("SELECT ultima FROM routine WHERE id=?", (rid,))["ultima"])
 
 
+class TestStatoSistema(Base):
+    def test_stato_sistema_mostra_cosa_aspetta_l_utente(self):
+        c = self.ctx()
+        c.ada._esegui("contabilita_piva", "richiedi_approvazione", {"tipo": "pagamento", "titolo": "F24 acconto", "dettaglio": "x"})
+        c.ada.segnala("revisore", "ha sbagliato un totale", "utente")
+        out = c.ada._esegui("ada", "stato_sistema", {})
+        self.assertIn("IN ATTESA DELL'UTENTE: 1", out)
+        self.assertIn("F24 acconto", out)
+        self.assertIn("SEGNALAZIONI APERTE: 1", out)
+        self.assertIn("riepilogo_sera", out)
+        self.assertEqual(c.ada._esegui("revisore", "stato_sistema", {}), "Strumento non consentito.")
+
+    def test_prompt_delle_routine_di_sistema_si_riallinea_all_avvio(self):
+        c = self.ctx()
+        c.db.esegui("UPDATE routine SET prompt='vecchio prompt' WHERE nome='riepilogo_sera'")
+        Pianificatore(c.ada)
+        self.assertIn("stato_sistema", c.db.uno("SELECT prompt FROM routine WHERE nome='riepilogo_sera'")["prompt"])
+
+    def test_riepilogo_spese_indica_l_ultimo_movimento(self):
+        import sqlite3
+        db = Path(self.tmp.name) / "m.db"
+        k = sqlite3.connect(db)
+        k.execute("CREATE TABLE movimenti (chiave TEXT, quando TEXT, importo REAL, controparte TEXT, testo TEXT)")
+        mese = time.strftime("%Y-%m")
+        k.execute("INSERT INTO movimenti VALUES ('1', ?, -5.8, 'Cristal Bar', '')", (f"{mese}-23 14:20:39",))
+        k.commit()
+        k.close()
+        c = costruisci(llm=FinteRisposte(), home=Path(self.tmp.name), movimenti=db, token="")
+        self.addCleanup(c.db.c.close)
+        self.assertIn(f"Ultimo movimento letto: {mese}-23 14:20:39", c.ada._esegui("ada", "riepilogo_spese", {}))
+
+
 class TestRoutineDiAda(Base):
     def crea(self, c, **kw):
         a = {"azione": "crea", "nome": "controllo_bollette", "descrizione": "Controlla le bollette",

@@ -68,7 +68,8 @@ class Soldi:
         if not r["movimenti"]:
             return "Nessun movimento registrato per il periodo richiesto."
         righe = [f"Periodo {r['periodo']}: {r['movimenti']} movimenti, entrate {r['entrate']:.2f} €, "
-                 f"uscite {r['uscite']:.2f} €, saldo {r['saldo']:.2f} €.", "Uscite per categoria:"]
+                 f"uscite {r['uscite']:.2f} €, saldo {r['saldo']:.2f} €.",
+                 f"Ultimo movimento letto: {r['ultimi'][0]['quando']}.", "Uscite per categoria:"]
         righe += [f"- {c['nome']}: {c['totale']:.2f} €" for c in r["per_categoria"]]
         righe.append("Esercenti più costosi:")
         righe += [f"- {e['nome']}: {e['totale']:.2f} €" for e in r["top_esercenti"][:5]]

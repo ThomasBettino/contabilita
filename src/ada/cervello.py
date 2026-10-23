@@ -23,7 +23,7 @@ MIN_INTERVALLO = 30        # minuti: argine ai costi
 LIMITE_TOKEN = int(os.environ.get("ADA_LIMITE_TOKEN", "400000"))  # tetto giornaliero per i lavori automatici
 PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
 
-CAPACITA = """CAPACITÀ COLLEGATE OGGI: leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
+CAPACITA = """CAPACITÀ COLLEGATE OGGI: leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese; la lettura delle notifiche non dipende dal collegamento dello schermo); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
 TELEFONO_SI = "TELEFONO: collegato. Puoi guardare e usare lo schermo con gli strumenti telefono_*. Le app finanziarie sono protette e il tasto finale di acquisto/pagamento lo preme sempre l'utente."
 TELEFONO_NO = "TELEFONO: NON collegato (manca il debug wireless, vedi docs/TELEFONO.md). Non puoi usare lo schermo: dillo all'utente se serve."
@@ -37,6 +37,7 @@ def _tool(nome, descrizione, proprieta, obbligatori):
 _S = {"type": "string"}
 T_RIEPILOGO = _tool("riepilogo_spese", "Riepilogo di entrate, uscite e categorie dai movimenti Revolut.",
                     {"periodo": {"type": "string", "enum": ["mese", "sempre"]}}, [])
+T_STATO = _tool("stato_sistema", "Cosa aspetta una decisione dell'utente, segnalazioni aperte, routine, ultime attività e consumo di oggi.", {}, [])
 T_SEGNALA = _tool("annota_segnalazione", "Annota un problema o una mancanza osservata in un assistente.",
                   {"agente": _S, "problema": _S}, ["agente", "problema"])
 T_APPROVAZIONE = _tool("richiedi_approvazione",
@@ -81,7 +82,7 @@ T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata fina
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
-STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE]
+STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE, T_STATO]
 GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
 
 
@@ -184,6 +185,8 @@ class Ada:
                 return self._pronto(int(args["id"]), str(args.get("nota", ""))[:300])
             if nome == "gestisci_routine":
                 return self._routine(args)
+            if nome == "stato_sistema":
+                return self._stato_sistema()
             if nome == "chiudi_segnalazione":
                 self.db.esegui("UPDATE segnalazioni SET stato='chiusa', esito=? WHERE id=?",
                                (str(args["esito"])[:300], int(args["id"])))
@@ -478,6 +481,20 @@ class Ada:
         if risposta:
             self.avvisa("Ada", f"{nome.replace('_', ' ').capitalize()}: pronto, aprila per leggerlo.", "ada-routine")
         return risposta[:300] or "Nessun risultato."
+
+    def _stato_sistema(self):
+        ora = int(time.time())
+        att = self.db.tutti(f"SELECT tipo, titolo, stato, ts FROM approvazioni WHERE stato IN {PENDENTI} ORDER BY id")
+        seg = self.db.tutti("SELECT id, agente, problema FROM segnalazioni WHERE stato='aperta' ORDER BY id")
+        rou = self.db.tutti("SELECT nome, attiva, ultima, esito FROM routine ORDER BY id")
+        c = self.consumo_oggi()
+        righe = [f"IN ATTESA DELL'UTENTE: {len(att)}"] + [
+            f"- [{a['tipo']}/{a['stato']}] {a['titolo']} (da {max(0, (ora - a['ts']) // 60)} min)" for a in att]
+        righe += [f"SEGNALAZIONI APERTE: {len(seg)}"] + [f"- #{s['id']} {s['agente']}: {s['problema']}" for s in seg]
+        righe += ["ROUTINE:"] + [f"- {r['nome']} ({'attiva' if r['attiva'] else 'spenta'}), ultima: {r['esito'] or 'mai eseguita'}"
+                                 for r in rou]
+        righe.append(f"CONSUMO OGGI: {c['totale']} token su {c['limite']}")
+        return "\n".join(righe)
 
     def _routine(self, args):
         azione = args.get("azione")
