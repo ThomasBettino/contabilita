@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Reparto Telefono, addetto Notifiche: legge le notifiche del telefono Android di Thomas, che MacroDroid inoltra alla sua Gmail
 // (oggetto "[Telefono] <app> | <titolo> | <ora>", testo = testo della notifica), e le passa ad Agente 1.
-// Conta solo le email mandate da Thomas stesso; nasconde i codici di verifica. Nel rapporto racconta solo le chiamate perse
-// e i messaggi dei clienti con una trattativa aperta: il resto lo tiene per lo specialista Telefono (sync/telefono).
+// Thomas ha due telefoni: il personale manda "[Telefono] …", quello di lavoro "[Telefono lavoro] …".
+// Conta solo le email mandate da Thomas stesso; nasconde i codici di verifica. Nel rapporto racconta le chiamate perse,
+// i messaggi delle persone importanti (config/telefono.importanti, per esempio la sua ragazza) e quelli dei clienti con una
+// trattativa aperta: il resto lo tiene per lo specialista Telefono (sync/telefono).
 //
 // Uso: node telefono.js <thread.json> <export-agente> <export-vendite> <uscita> <email-di-thomas>
 //   <thread.json>      risposta di Gmail search_threads con la query stampata da `node telefono.js query`
-//   <export-agente>    cartella con sync/telefono.json (notifiche già viste), se c'è
+//   <export-agente>    cartella con sync/telefono.json (notifiche già viste) e config/telefono.json (persone importanti), se ci sono
 //   <export-vendite>   cartella con trattative/*.json dell'app vendite, per riconoscere i clienti
 //   scrive <uscita>/sync/telefono.json e <uscita>/righe/telefono-notifiche.json
 // Uso: node telefono.js query    stampa la query da usare in search_threads
@@ -46,15 +48,16 @@ const senzaCodici = (s) => (/codic|code|otp|verific|password|pin\b|accesso|login
 
 function notifica(m, t) {
   const oggetto = pulito(m.subject || t.subject);
-  const r = /^\[telefono\]\s*(.*)$/i.exec(oggetto);
+  const r = /^\[telefono(?:\s+(lavoro|aziendale|personale))?\]\s*(.*)$/i.exec(oggetto);
   if (!r) return null;
+  const tel = /lavoro|aziendale/i.test(r[1] || '') ? 'lavoro' : 'personale';
   // Separatore "|", con o senza spazi; un titolo vuoto resta vuoto.
-  const parti = r[1].split(/\s*\|\s*/);
+  const parti = r[2].split(/\s*\|\s*/);
   const app = (parti[0] || 'App').trim();
   // Le notifiche di Gmail e di MacroDroid non si inoltrano: creerebbero un giro senza fine.
   if (/^(gmail|macrodroid)$/i.test(app)) return null;
   const titolo = (parti[1] || '').trim();
-  return { id: m.id, app, titolo: senzaCodici(titolo), testo: senzaCodici(breve(pulito(m.snippet), 220)), ora: new Date(m.date || Date.now()).toISOString() };
+  return { id: m.id, tel, app, titolo: senzaCodici(titolo), testo: senzaCodici(breve(pulito(m.snippet), 220)), ora: new Date(m.date || Date.now()).toISOString() };
 }
 
 const persa = (n) => /telefono|phone|dialer|chiamat|call/i.test(n.app + ' ' + n.titolo + ' ' + n.testo) && /pers[ae]\b|missed|senza risposta|non rispost/i.test(n.titolo + ' ' + n.testo);
@@ -73,6 +76,12 @@ function cliente(chi, elenco) {
   const nel = new Set(parole(chi));
   return elenco.find((c) => c.parole.length >= 2 && c.parole.every((p) => nel.has(p)));
 }
+// Le persone importanti le sceglie Thomas: basta un nome solo ("Martina", "Amore"), come è salvato in rubrica.
+function importante(chi, elenco) {
+  const nel = new Set(parole(chi));
+  return elenco.find((x) => x.parole.every((p) => nel.has(p)));
+}
+const suTel = (n) => (n.tel === 'lavoro' ? ' sul telefono di lavoro' : '');
 const scheda = (c) => c.nome + ' (' + (c.stato === 'aperto' ? 'preventivo' : 'vendita') + (c.auto ? ' ' + c.auto : '') + (c.stato === 'aperto' ? ' aperto' : ' da consegnare') + ')';
 
 const args = process.argv.slice(2);
@@ -87,7 +96,7 @@ if (args[0] === 'cestino') {
   const ids = io ? lista.filter((t) => {
     const msg = (t.messages || []).filter(Boolean);
     return t.id && msg.length && (!t.messageCount || t.messageCount === msg.length) &&
-      msg.every((m) => String(m.sender || '').toLowerCase().includes(io) && /^\[telefono\]/i.test(pulito(m.subject || t.subject)));
+      msg.every((m) => String(m.sender || '').toLowerCase().includes(io) && /^\[telefono[^\]]*\]/i.test(pulito(m.subject || t.subject)));
   }).map((t) => t.id).slice(0, 50) : [];
   console.log(JSON.stringify(ids));
   process.exit(0);
@@ -124,24 +133,38 @@ for (const t of thread) {
 }
 const ultime = [...tutte.values()].sort((a, b) => b.ora.localeCompare(a.ora)).slice(0, 30);
 const elenco = clienti(dirVendite);
+const conf = leggiFile(path.join(dirAgente, 'config', 'telefono.json')) || {};
+const vip = [].concat(conf.importanti || []).map((nome) => ({ nome: pulito(nome), parole: parole(nome) })).filter((x) => x.parole.length);
 const righe = [];
+// I messaggi della stessa persona, sulla stessa app e sullo stesso telefono diventano una riga sola: in `righe` resta
+// la chiave al posto giusto (in ordine di ora) e dopo il giro si scrive la riga vera.
+const messaggi = new Map();
 for (const n of nuove.sort((a, b) => a.ora.localeCompare(b.ora))) {
   if (persa(n)) {
     const chi = chiChiama(n), c = cliente(chi, elenco);
-    righe.push('hai una chiamata persa da ' + (c ? scheda(c) : chi) + ' alle ' + oraBreve(n.ora) + '.');
+    righe.push('hai una chiamata persa' + suTel(n) + ' da ' + (c ? scheda(c) : chi) + ' alle ' + oraBreve(n.ora) + '.');
     continue;
   }
-  const c = cliente(n.titolo, elenco);
-  if (c) righe.push(scheda(c) + ' ti ha scritto su ' + n.app + ' alle ' + oraBreve(n.ora) + ': «' + breve(n.testo, 140) + '»');
+  const c = cliente(n.titolo, elenco), v = !c && importante(n.titolo, vip);
+  if (!c && !v) continue;
+  const chiave = (c ? 'c:' + c.nome : 'v:' + v.nome) + '|' + n.app + '|' + n.tel;
+  if (!messaggi.has(chiave)) { messaggi.set(chiave, { chi: c ? scheda(c) : n.titolo, lista: [] }); righe.push(chiave); }
+  messaggi.get(chiave).lista.push(n);
+}
+for (let i = 0; i < righe.length; i++) {
+  const g = messaggi.get(righe[i]);
+  if (!g) continue;
+  const primo = g.lista[0], ultimo = g.lista[g.lista.length - 1];
+  righe[i] = g.chi + ' ti ha scritto su ' + primo.app + suTel(primo) + (g.lista.length === 1 ? ' alle ' + oraBreve(primo.ora) : ' (' + g.lista.length + ' messaggi, dalle ' + oraBreve(primo.ora) + ' alle ' + oraBreve(ultimo.ora) + ', l\'ultimo)') + ': «' + breve(ultimo.testo, 140) + '»';
 }
 
 const collegato = ultime.length > 0 || !!prima.ultima;
 const perApp = {};
-for (const n of ultime) perApp[n.app] = (perApp[n.app] || 0) + 1;
+for (const n of ultime) { const k = n.app + (n.tel === 'lavoro' ? ' (lavoro)' : ''); perApp[k] = (perApp[k] || 0) + 1; }
 const testo = !collegato
   ? 'Il telefono non è ancora collegato: nessuna notifica inoltrata da MacroDroid alla Gmail di Thomas negli ultimi 2 giorni.'
-  : 'NOTIFICHE DEL TELEFONO (ultime ' + ORE + ' ore, dalla più recente; ' + Object.entries(perApp).map(([a, k]) => a + ' ' + k).join(', ') + '):\n' +
-    (ultime.length ? ultime.map((n) => '- ' + n.ora.slice(0, 10) + ' ' + oraBreve(n.ora) + ' ' + n.app + (n.titolo ? ' · ' + n.titolo : '') + (n.testo ? ': ' + n.testo : '')).join('\n') : '- nessuna');
+  : (vip.length ? 'PERSONE IMPORTANTI PER THOMAS: ' + vip.map((x) => x.nome).join(', ') + '.\n' : '') + 'NOTIFICHE DEI TELEFONI (ultime ' + ORE + ' ore, dalla più recente; ' + Object.entries(perApp).map(([a, k]) => a + ' ' + k).join(', ') + '):\n' +
+    (ultime.length ? ultime.map((n) => '- ' + n.ora.slice(0, 10) + ' ' + oraBreve(n.ora) + (n.tel === 'lavoro' ? ' [lavoro]' : '') + ' ' + n.app + (n.titolo ? ' · ' + n.titolo : '') + (n.testo ? ': ' + n.testo : '')).join('\n') : '- nessuna');
 scrivi(path.join(dirUscita, 'sync', 'telefono.json'), {
   aggiornato: ora.toISOString(), fonte: 'Notifiche del telefono (MacroDroid → Gmail)', collegato,
   ultima: ultime.length ? ultime[0].ora : prima.ultima || null, perApp, ultime, visti: [...visti].slice(-400), testo
