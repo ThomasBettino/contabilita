@@ -76,7 +76,8 @@ function cliente(chi, elenco) {
   const nel = new Set(parole(chi));
   return elenco.find((c) => c.parole.length >= 2 && c.parole.every((p) => nel.has(p)));
 }
-// Le persone importanti le sceglie Thomas: basta un nome solo ("Martina", "Amore"), come è salvato in rubrica.
+// Le persone importanti le sceglie Thomas: { rubrica: nome com'è salvato nel telefono (basta una parola, "Tata"),
+// chi: come chiamarla nel rapporto ("Martina") }. Va bene anche solo il nome di rubrica, come stringa.
 function importante(chi, elenco) {
   const nel = new Set(parole(chi));
   return elenco.find((x) => x.parole.every((p) => nel.has(p)));
@@ -134,21 +135,22 @@ for (const t of thread) {
 const ultime = [...tutte.values()].sort((a, b) => b.ora.localeCompare(a.ora)).slice(0, 30);
 const elenco = clienti(dirVendite);
 const conf = leggiFile(path.join(dirAgente, 'config', 'telefono.json')) || {};
-const vip = [].concat(conf.importanti || []).map((nome) => ({ nome: pulito(nome), parole: parole(nome) })).filter((x) => x.parole.length);
+const vip = [].concat(conf.importanti || []).map((x) => (typeof x === 'string' ? { rubrica: x } : x || {}))
+  .map((x) => ({ nome: pulito(x.chi || x.rubrica), rubrica: pulito(x.rubrica), parole: parole(x.rubrica) })).filter((x) => x.parole.length);
 const righe = [];
 // I messaggi della stessa persona, sulla stessa app e sullo stesso telefono diventano una riga sola: in `righe` resta
 // la chiave al posto giusto (in ordine di ora) e dopo il giro si scrive la riga vera.
 const messaggi = new Map();
 for (const n of nuove.sort((a, b) => a.ora.localeCompare(b.ora))) {
   if (persa(n)) {
-    const chi = chiChiama(n), c = cliente(chi, elenco);
-    righe.push('hai una chiamata persa' + suTel(n) + ' da ' + (c ? scheda(c) : chi) + ' alle ' + oraBreve(n.ora) + '.');
+    const chi = chiChiama(n), c = cliente(chi, elenco), v = !c && importante(chi, vip);
+    righe.push('hai una chiamata persa' + suTel(n) + ' da ' + (c ? scheda(c) : v ? v.nome : chi) + ' alle ' + oraBreve(n.ora) + '.');
     continue;
   }
   const c = cliente(n.titolo, elenco), v = !c && importante(n.titolo, vip);
   if (!c && !v) continue;
   const chiave = (c ? 'c:' + c.nome : 'v:' + v.nome) + '|' + n.app + '|' + n.tel;
-  if (!messaggi.has(chiave)) { messaggi.set(chiave, { chi: c ? scheda(c) : n.titolo, lista: [] }); righe.push(chiave); }
+  if (!messaggi.has(chiave)) { messaggi.set(chiave, { chi: c ? scheda(c) : v.nome, lista: [] }); righe.push(chiave); }
   messaggi.get(chiave).lista.push(n);
 }
 for (let i = 0; i < righe.length; i++) {
@@ -163,7 +165,7 @@ const perApp = {};
 for (const n of ultime) { const k = n.app + (n.tel === 'lavoro' ? ' (lavoro)' : ''); perApp[k] = (perApp[k] || 0) + 1; }
 const testo = !collegato
   ? 'Il telefono non è ancora collegato: nessuna notifica inoltrata da MacroDroid alla Gmail di Thomas negli ultimi 2 giorni.'
-  : (vip.length ? 'PERSONE IMPORTANTI PER THOMAS: ' + vip.map((x) => x.nome).join(', ') + '.\n' : '') + 'NOTIFICHE DEI TELEFONI (ultime ' + ORE + ' ore, dalla più recente; ' + Object.entries(perApp).map(([a, k]) => a + ' ' + k).join(', ') + '):\n' +
+  : (vip.length ? 'PERSONE IMPORTANTI PER THOMAS (nome in rubrica → chi è): ' + vip.map((x) => x.rubrica + (x.nome !== x.rubrica ? ' → ' + x.nome : '')).join(', ') + '.\n' : '') + 'NOTIFICHE DEI TELEFONI (ultime ' + ORE + ' ore, dalla più recente; ' + Object.entries(perApp).map(([a, k]) => a + ' ' + k).join(', ') + '):\n' +
     (ultime.length ? ultime.map((n) => '- ' + n.ora.slice(0, 10) + ' ' + oraBreve(n.ora) + (n.tel === 'lavoro' ? ' [lavoro]' : '') + ' ' + n.app + (n.titolo ? ' · ' + n.titolo : '') + (n.testo ? ': ' + n.testo : '')).join('\n') : '- nessuna');
 scrivi(path.join(dirUscita, 'sync', 'telefono.json'), {
   aggiornato: ora.toISOString(), fonte: 'Notifiche del telefono (MacroDroid → Gmail)', collegato,
