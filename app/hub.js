@@ -123,6 +123,32 @@ function disegna(s) {
     h("span", null, h("b", null, nome(x.agente)), " · ", x.azione, x.dettaglio ? " — " + x.dettaglio : ""),
     h("span", { class: "meta" }, quando(x.ts)))) : h("div", { class: "vuoto" }, "Nessuna attività registrata."));
   disegnaSoldi(s.soldi);
+  disegnaRoutine(s.routine || [], s.consumo);
+}
+
+const quandoRoutine = (r) => r.ora ? `ogni giorno alle ${r.ora}`
+  : r.ogni_min % 60 === 0 ? `ogni ${r.ogni_min / 60} ${r.ogni_min === 60 ? "ora" : "ore"}` : `ogni ${r.ogni_min} minuti`;
+
+function disegnaRoutine(routine, c) {
+  const fmt = (n) => new Intl.NumberFormat("it-IT").format(n);
+  $("consumo").textContent = c ? `Consumo di oggi: ${fmt(c.totale)} di ${fmt(c.limite)} token per i lavori automatici (${c.chiamate} chiamate).` : "";
+  svuota($("routine"), routine.map((r) => {
+    const esegui = async (e) => {
+      e.target.disabled = true; toast("Ada ci sta lavorando…");
+      try { const x = await api(`/api/routine/${r.id}/esegui`, {}); toast(x.esito.slice(0, 120)); caricaChat(); }
+      catch (err) { toast(err.message); }
+      finally { e.target.disabled = false; aggiorna(); }
+    };
+    const alterna = async () => { try { await api("/api/routine/" + r.id, { attiva: !r.attiva }); aggiorna(); } catch (err) { toast(err.message); } };
+    return h("div", { class: "voce" },
+      h("div", null, h("span", { class: "tag " + (r.attiva ? "ok" : "") }, r.attiva ? "attiva" : "spenta"), " ",
+        h("span", { class: "tag" }, quandoRoutine(r))),
+      h("b", null, r.nome.replace(/_/g, " ")), h("span", null, r.descrizione),
+      r.ultima ? h("span", { class: "meta" }, `Ultima: ${quando(r.ultima)} · ${r.esito || ""}`) : h("span", { class: "meta" }, "Mai eseguita"),
+      h("div", { class: "azioni" },
+        h("button", { class: "secondario", type: "button", onclick: esegui }, "Esegui ora"),
+        h("button", { class: "secondario", type: "button", onclick: alterna }, r.attiva ? "Disattiva" : "Attiva")));
+  }));
 }
 
 const stelle = (n) => (n == null ? "" : "★ " + String(n).replace(".", ","));

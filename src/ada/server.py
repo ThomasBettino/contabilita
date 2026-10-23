@@ -18,6 +18,8 @@ from .agenti import AGENTI, Squadra
 from .cervello import Ada
 from .db import DB, casa
 from .llm import Claude
+from .notifica import Notifica
+from .pianificatore import Pianificatore
 from .soldi import Soldi
 from ..telefono.adb import Adb
 from ..telefono.mano import Mano
@@ -28,8 +30,9 @@ CSP = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 's
 
 
 class Contesto:
-    def __init__(self, ada, db, squadra, soldi, token="", web=WEB):
+    def __init__(self, ada, db, squadra, soldi, token="", web=WEB, pian=None):
         self.ada, self.db, self.squadra, self.soldi, self.token, self.web = ada, db, squadra, soldi, token, web
+        self.pian = pian
 
     def stato(self):
         ora = int(time.time())
@@ -56,6 +59,8 @@ class Contesto:
             "attivita": self.db.tutti("SELECT ts, agente, azione, dettaglio FROM attivita ORDER BY id DESC LIMIT 40"),
             "segnalazioni_aperte": self.db.uno("SELECT COUNT(*) AS n FROM segnalazioni WHERE stato='aperta'")["n"],
             "soldi": self.soldi.riepilogo("mese"),
+            "routine": self.pian.elenco() if self.pian else [],
+            "consumo": self.ada.consumo_oggi(),
         }
 
 
@@ -128,6 +133,13 @@ def crea_handler(ctx):
                 return {"messaggi": ctx.db.tutti("SELECT ts, ruolo, testo FROM chat ORDER BY id DESC LIMIT 50")[::-1]}
             if metodo == "POST" and path == "/api/chat":
                 return {"risposta": ctx.ada.chiacchiera(corpo.get("messaggio", ""))}
+            m = re.fullmatch(r"/api/routine/(\d+)/esegui", path)
+            if metodo == "POST" and m:
+                return {"esito": ctx.pian.esegui(int(m.group(1)), manuale=True)}
+            m = re.fullmatch(r"/api/routine/(\d+)", path)
+            if metodo == "POST" and m:
+                ctx.db.esegui("UPDATE routine SET attiva=? WHERE id=?", (1 if corpo.get("attiva") else 0, int(m.group(1))))
+                return {"ok": True}
             if path == "/api/telefono/collega" and metodo == "POST":
                 if ctx.ada.mano is None:
                     raise ValueError("Telefono non configurato.")
@@ -199,7 +211,8 @@ def costruisci(llm=None, home=None, movimenti=None, token=None):
     ada = Ada(db, squadra, soldi, llm or Claude())
     ada.mano = Mano(Adb(seriale=os.environ.get("ADA_ADB_SERIALE") or None),
                     autorizzato=ada.autorizzazione_attiva, log=ada.log)
-    return Contesto(ada, db, squadra, soldi, os.environ.get("ADA_TOKEN", "") if token is None else token)
+    return Contesto(ada, db, squadra, soldi, os.environ.get("ADA_TOKEN", "") if token is None else token,
+                    pian=Pianificatore(ada))
 
 
 def main():
@@ -207,6 +220,8 @@ def main():
     ctx = costruisci()
     if host not in LOOPBACK and not ctx.token:
         sys.exit("Rifiuto di partire su una rete aperta senza ADA_TOKEN: imposta un token o usa ADA_HOST=127.0.0.1.")
+    ctx.ada.notifica = Notifica(url=f"http://localhost:{porta}").invia
+    ctx.pian.avvia()
     srv = crea_server(ctx, host, porta)
     print(f"Ada è pronta su http://{host}:{porta}  (cervello: {'collegato' if ctx.ada.llm.disponibile else 'NON collegato'})", flush=True)
     try:

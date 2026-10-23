@@ -5,16 +5,23 @@ non nei prompt: quello che Ada può riscrivere non include mai queste regole.
 """
 import difflib
 import json
+import os
+import re
 import threading
 import time
 
 from .agenti import AGENTI
 from .llm import ErroreLLM
+from .pianificatore import prossima_esecuzione
 
 MAX_PROMPT = 8000
 SOGLIA_SIMILARITA = 0.85   # sotto questa, la modifica è "grande"
 MAX_AGGIUNTA = 600         # caratteri aggiunti oltre i quali è "grande"
 MAX_PICCOLE_24H = 3        # oltre, serve l'ok: argine contro la deriva dei prompt
+MAX_ROUTINE = 8            # routine create da Ada
+MIN_INTERVALLO = 30        # minuti: argine ai costi
+LIMITE_TOKEN = int(os.environ.get("ADA_LIMITE_TOKEN", "400000"))  # tetto giornaliero per i lavori automatici
+PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
@@ -64,13 +71,17 @@ T_PROPONI = _tool("proponi_acquisto",
                       "recensioni": _N, "venditore": _S, "motivo": _S,
                       "etichetta": {"type": "string", "enum": ["economica", "meglio_recensita", "consigliata", "altra"]}},
                       "required": ["nome", "prezzo_totale"]}}}, ["richiesta", "opzioni"])
+T_ROUTINE = _tool("gestisci_routine",
+                  "Crea, modifica, attiva o disattiva una tua routine automatica (ogni giorno a un'ora, oppure ogni N minuti, minimo 30). Le routine automatiche non usano mai lo schermo del telefono.",
+                  {"azione": {"type": "string", "enum": ["crea", "modifica", "attiva", "disattiva"]}, "nome": _S,
+                   "descrizione": _S, "prompt": _S, "ora": _S, "ogni_min": _N}, ["azione", "nome"])
 T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata finale e ora tocca all'utente premere il tasto.",
                  {"id": _N, "nota": _S}, ["id", "nota"])
 
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
-STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI]
+STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE]
 GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
 
 
@@ -88,8 +99,32 @@ class Ada:
     def __init__(self, db, squadra, soldi, llm, mano=None, max_giri=6):
         self.db, self.squadra, self.soldi, self.llm, self.mano, self.max_giri = db, squadra, soldi, llm, mano, max_giri
         self.lock = threading.Lock()
+        self.automatico = False   # vero durante una routine: niente schermo senza l'utente
+        self.notifica = None      # funzione(titolo, testo, id) impostata dal server
 
     # ---------- utilità ----------
+    def avvisa(self, titolo, testo, id_="ada"):
+        if self.notifica:
+            try:
+                self.notifica(titolo, testo, id_)
+            except Exception as e:  # la notifica è un extra: non deve rompere il lavoro
+                self.log("sistema", "errore notifica", e)
+
+    def _conta(self, risposta):
+        u = risposta.get("usage") or {}
+        self.db.esegui("INSERT INTO consumi (giorno, input, output, chiamate) VALUES (?,?,?,1) "
+                       "ON CONFLICT(giorno) DO UPDATE SET input=input+excluded.input, output=output+excluded.output, "
+                       "chiamate=chiamate+1", (time.strftime("%Y-%m-%d"), int(u.get("input_tokens") or 0),
+                                               int(u.get("output_tokens") or 0)))
+
+    def consumo_oggi(self):
+        r = self.db.uno("SELECT input, output, chiamate FROM consumi WHERE giorno=?", (time.strftime("%Y-%m-%d"),)) \
+            or {"input": 0, "output": 0, "chiamate": 0}
+        return {**r, "totale": r["input"] + r["output"], "limite": LIMITE_TOKEN}
+
+    def sopra_limite(self):
+        return self.consumo_oggi()["totale"] >= LIMITE_TOKEN
+
     def log(self, agente, azione, dettaglio=""):
         self.db.esegui("INSERT INTO attivita (ts, agente, azione, dettaglio) VALUES (?,?,?,?)",
                        (int(time.time()), agente, azione, str(dettaglio)[:500]))
@@ -99,6 +134,11 @@ class Ada:
         righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.", CAPACITA,
                  TELEFONO_SI if self.mano and self.mano.disponibile() else TELEFONO_NO]
         if chi == "ada":
+            routine = self.db.tutti("SELECT nome, ora, ogni_min, attiva FROM routine ORDER BY id")
+            if routine:
+                righe.append("ROUTINE: " + "; ".join(
+                    f"{x['nome']} ({'ogni giorno alle ' + x['ora'] if x['ora'] else 'ogni ' + str(x['ogni_min']) + ' min'}"
+                    f"{'' if x['attiva'] else ', disattivata'})" for x in routine))
             righe.append("TEAM: " + "; ".join(f"{k} ({v[1]})" for k, v in AGENTI.items() if k != "ada"))
             if aperte:
                 righe.append("SEGNALAZIONI APERTE: " + " | ".join(f"#{s['id']} {s['agente']}: {s['problema']}" for s in aperte))
@@ -110,6 +150,7 @@ class Ada:
         testo = ""
         for _ in range(GIRI.get(chi, self.max_giri)):
             r = self.llm(system, messaggi, strumenti)
+            self._conta(r)
             blocchi = r.get("content", [])
             testo = "".join(b.get("text", "") for b in blocchi if b.get("type") == "text").strip()
             if r.get("stop_reason") != "tool_use":
@@ -141,6 +182,8 @@ class Ada:
                 return self._proponi_acquisto(chi, args)
             if nome == "acquisto_pronto":
                 return self._pronto(int(args["id"]), str(args.get("nota", ""))[:300])
+            if nome == "gestisci_routine":
+                return self._routine(args)
             if nome == "chiudi_segnalazione":
                 self.db.esegui("UPDATE segnalazioni SET stato='chiusa', esito=? WHERE id=?",
                                (str(args["esito"])[:300], int(args["id"])))
@@ -165,6 +208,7 @@ class Ada:
         cur = self.db.esegui("INSERT INTO approvazioni (ts, tipo, titolo, dettaglio) VALUES (?,?,?,?)",
                              (int(time.time()), args["tipo"], str(args["titolo"])[:200], dettaglio))
         self.log(chi, "richiesta approvazione", args["titolo"])
+        self._avvisa_attesa()
         return f"Richiesta #{cur.lastrowid} registrata: in attesa del via libera dell'utente. Non è stato eseguito nulla."
 
     def risolvi(self, id_, esito, opzione=None):
@@ -189,6 +233,11 @@ class Ada:
         return self.db.uno("SELECT * FROM approvazioni WHERE id=?", (id_,))
 
     # ---------- acquisti: scelta, autorizzazione, pronto, chiuso ----------
+    def _avvisa_attesa(self):
+        n = self.db.uno(f"SELECT COUNT(*) AS n FROM approvazioni WHERE stato IN {PENDENTI}")["n"]
+        self.avvisa("Ada ha bisogno di te", f"{n} {'cosa aspetta' if n == 1 else 'cose aspettano'} la tua decisione.",
+                    "ada-attesa")
+
     def _proponi_acquisto(self, chi, args):
         opzioni = args.get("opzioni")
         if not isinstance(opzioni, list) or not 1 <= len(opzioni) <= 5:
@@ -206,6 +255,7 @@ class Ada:
         cur = self.db.esegui("INSERT INTO approvazioni (ts, tipo, titolo, dettaglio) VALUES (?,?,?,?)",
                              (int(time.time()), "acquisto", str(args.get("richiesta", "Acquisto"))[:200], det))
         self.log(chi, "proposta acquisto", args.get("richiesta", ""))
+        self._avvisa_attesa()
         return (f"Proposta #{cur.lastrowid} mostrata all'utente. Non toccare carrello o cassa: "
                 "aspetta che scelga un'opzione e ti autorizzi.")
 
@@ -256,6 +306,7 @@ class Ada:
         self.db.esegui("UPDATE approvazioni SET stato='pronto', dettaglio=? WHERE id=?",
                        (json.dumps(det, ensure_ascii=False), id_))
         self.log("acquisti", "ordine pronto", "aspetta l'utente per il tasto finale")
+        self.avvisa("Ordine pronto", "Apri il telefono: il tasto finale lo premi tu.", "ada-ordine")
         return "Registrato: ora tocca all'utente premere il tasto finale. Non toccare nient'altro."
 
     def chiudi_acquisto(self, id_, esito):
@@ -268,6 +319,8 @@ class Ada:
         self.log("utente", f"acquisto {esito}", a["titolo"])
 
     def _telefono(self, nome, args):
+        if self.automatico:
+            return "Routine automatica: non uso lo schermo senza che l'utente sia presente."
         if not self.mano:
             return TELEFONO_NO
         m = self.mano
@@ -314,6 +367,7 @@ class Ada:
                              (int(time.time()), "prompt", f"Modifica grande al prompt di {AGENTI[agente][0]}", det))
         self.db.esegui("UPDATE miglioramenti SET approvazione_id=? WHERE id=?", (cur.lastrowid, mid))
         self.log("ada", "proposta modifica grande", f"{agente}: {motivo}")
+        self._avvisa_attesa()
         return f"Modifica grande (#{mid}): non applicata, serve l'ok dell'utente (richiesta #{cur.lastrowid})."
 
     def _applica(self, mid):
@@ -379,7 +433,7 @@ class Ada:
             self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)", (int(time.time()), "ada", risposta))
         return risposta
 
-    def ciclo_miglioramento(self):
+    def ciclo_miglioramento(self, automatico=False):
         aperte = self.db.tutti("SELECT * FROM segnalazioni WHERE stato='aperta' ORDER BY id")
         if not aperte:
             return "Nessuna segnalazione aperta: per ora non c'è niente da migliorare."
@@ -390,11 +444,79 @@ class Ada:
                      "\nPer ognuna valuta se la causa è nel prompt dell'agente. Se sì, usa migliora_prompt (prompt completo). "
                      "Poi chiudi la segnalazione con chiudi_segnalazione e riassumi cosa hai fatto in poche righe.")
         with self.lock:
+            self.automatico = automatico
             try:
                 risposta = self._ciclo("ada", [{"role": "user", "content": richiesta}], STRUMENTI_ADA)
             except ErroreLLM as e:
                 self.log("ada", "errore", e)
                 return f"Ciclo interrotto: {str(e)[:160]}"
+            finally:
+                self.automatico = False
             self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)",
                            (int(time.time()), "ada", "Ciclo di miglioramento:\n" + risposta))
         return risposta
+
+    # ---------- lavoro automatico ----------
+    def lavoro_proattivo(self, prompt, nome):
+        """Esegue una routine: Ada lavora da sola, senza schermo, e lascia il risultato in chat."""
+        if not self.llm.disponibile:
+            return "Saltata: cervello non collegato."
+        with self.lock:
+            self.automatico = True
+            try:
+                risposta = self._ciclo("ada", [{"role": "user", "content": f"[ROUTINE AUTOMATICA {nome}] {prompt}"}],
+                                       STRUMENTI_ADA)
+            except ErroreLLM as e:
+                self.log("ada", "errore", e)
+                return f"Errore: {str(e)[:150]}"
+            finally:
+                self.automatico = False
+            if risposta:
+                titolo = nome.replace("_", " ").capitalize()
+                self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)",
+                               (int(time.time()), "ada", f"{titolo}:\n{risposta}"))
+        if risposta:
+            self.avvisa("Ada", f"{nome.replace('_', ' ').capitalize()}: pronto, aprila per leggerlo.", "ada-routine")
+        return risposta[:300] or "Nessun risultato."
+
+    def _routine(self, args):
+        azione = args.get("azione")
+        nome = re.sub(r"[^a-z0-9_]", "", str(args.get("nome", "")).lower())[:40]
+        if not nome:
+            return "Serve un nome (lettere minuscole, numeri e _)."
+        r = self.db.uno("SELECT * FROM routine WHERE nome=?", (nome,))
+        if azione in ("attiva", "disattiva"):
+            if not r:
+                return "Routine inesistente."
+            self.db.esegui("UPDATE routine SET attiva=? WHERE nome=?", (1 if azione == "attiva" else 0, nome))
+            self.log("ada", f"routine {azione}ta", nome)
+            return f"Routine {nome} {'attivata' if azione == 'attiva' else 'disattivata'}."
+        if azione not in ("crea", "modifica"):
+            return "Azione sconosciuta."
+        if azione == "modifica" and (not r or r["tipo"] != "ada"):
+            return "Si possono modificare solo le routine create da Ada; quelle di sistema solo attivare o disattivare."
+        if azione == "crea" and r:
+            return "Esiste già una routine con questo nome: usa modifica."
+        prompt, ora, ogni = str(args.get("prompt", "")).strip()[:1500], args.get("ora"), args.get("ogni_min")
+        if len(prompt) < 20:
+            return "Serve un prompt di almeno 20 caratteri."
+        if bool(ora) == bool(ogni):
+            return "Indica solo uno tra ora (HH:MM, ogni giorno) e ogni_min (ogni N minuti)."
+        if ora and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", str(ora)):
+            return "Ora non valida: usa HH:MM."
+        if ogni and (not isinstance(ogni, int) or ogni < MIN_INTERVALLO):
+            return f"Intervallo minimo: {MIN_INTERVALLO} minuti."
+        if azione == "crea" and self.db.uno("SELECT COUNT(*) AS n FROM routine WHERE tipo='ada' AND prompt IS NOT NULL "
+                                            "AND nome NOT IN ('riepilogo_sera')")["n"] >= MAX_ROUTINE:
+            return f"Massimo {MAX_ROUTINE} routine create da te: disattivane una."
+        prossima = prossima_esecuzione(ora, ogni, time.time())
+        if azione == "crea":
+            self.db.esegui("INSERT INTO routine (nome, descrizione, tipo, ora, ogni_min, prompt, prossima) "
+                           "VALUES (?,?,?,?,?,?,?)", (nome, str(args.get("descrizione", ""))[:160], "ada",
+                                                      ora or None, ogni or None, prompt, prossima))
+        else:
+            self.db.esegui("UPDATE routine SET descrizione=?, ora=?, ogni_min=?, prompt=?, prossima=? WHERE nome=?",
+                           (str(args.get("descrizione", r["descrizione"]))[:160], ora or None, ogni or None, prompt,
+                            prossima, nome))
+        self.log("ada", f"routine {'creata' if azione == 'crea' else 'modificata'}", nome)
+        return f"Routine {nome} {'creata' if azione == 'crea' else 'modificata'}."

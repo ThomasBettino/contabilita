@@ -19,6 +19,8 @@ Decisioni:
 
 - **Acquisti (costruito):** Ada cerca e confronta sul telefono (ADB, `src/telefono/`), mostra fino a 3 opzioni nell'app; l'utente sceglie e autorizza; Ada porta l'ordine alla schermata finale e si ferma; **il tasto finale lo preme sempre l'utente**. Il guardiano delle azioni sullo schermo sta nel codice: tasti d'acquisto e pagamento mai toccati, carrello e cassa solo con l'autorizzazione dell'utente (30 minuti), app finanziarie e password non lette né toccate, tasto di stop immediato.
 
+- **Ada proattiva (costruito):** pianificatore interno (`src/ada/pianificatore.py`) con routine a orari fissi, notifiche Termux generiche, tetto giornaliero di token per i lavori automatici, schermo mai usato in automatico, massimo 8 routine create da Ada con intervallo minimo di 30 minuti.
+
 Dove questa sezione contraddice quelle sotto, vale questa.
 
 

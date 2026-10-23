@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS approvazioni (
 CREATE TABLE IF NOT EXISTS miglioramenti (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, agente TEXT, motivo TEXT,
   vecchio TEXT, nuovo TEXT, tipo TEXT, stato TEXT, approvazione_id INTEGER);
+CREATE TABLE IF NOT EXISTS routine (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT UNIQUE, descrizione TEXT, tipo TEXT,
+  ora TEXT, ogni_min INTEGER, attiva INTEGER DEFAULT 1, prompt TEXT,
+  prossima INTEGER, ultima INTEGER, esito TEXT);
+CREATE TABLE IF NOT EXISTS consumi (
+  giorno TEXT PRIMARY KEY, input INTEGER DEFAULT 0, output INTEGER DEFAULT 0, chiamate INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS segnalazioni (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, agente TEXT, problema TEXT,
   fonte TEXT, stato TEXT DEFAULT 'aperta', esito TEXT);
