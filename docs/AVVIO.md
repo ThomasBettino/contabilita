@@ -49,6 +49,8 @@ cat ~/ada.log
 3. Apri **una volta** l'app Termux:Boot, e in Impostazioni, App, togli le restrizioni di batteria a **Termux** e **Termux:Boot**.
 4. Prova: riavvia il telefono, aspetta un minuto e apri Ada.
 
+**Se Ada non parte e nel log (`cat ~/ada.log`) c'è `cannot open scripts/ada.sh`, oppure `[1]+ Exit 2`:** sei sul ramo sbagliato. Su `main` il codice di Ada c'è solo dopo l'unione della richiesta #2; prima è sul ramo di lavoro. Controlla con `git branch --show-current` e, se non è `ccr-b35db874-occc4m`, torna con `git checkout ccr-b35db874-occc4m && git pull`. Non fare `git checkout main` finché la #2 non è unita.
+
 La lettura delle notifiche di Revolut riparte da sola dopo il riavvio (è un lavoro persistente: controlla con `termux-job-scheduler --pending`). Il collegamento dello schermo no: va rifatto con **Collega schermo**.
 
 Tieni il telefono carico: sotto il 10% Android limita i servizi in background.
