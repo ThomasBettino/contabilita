@@ -14,6 +14,10 @@ class TestParser(unittest.TestCase):
         m = parse("Hai ricevuto", "€1.250,00 da Mario Rossi")
         self.assertEqual((m.importo, m.controparte), (1250.0, "Mario Rossi"))
 
+    def test_notifica_reale_revolut(self):
+        m = parse("Cristal Bar Di Wang X.", "\U0001F6CD\uFE0F Hai speso 5,80 \u20AC\nSaldo di EUR: 59,90 \u20AC")
+        self.assertEqual((m.importo, m.controparte), (-5.8, "Cristal Bar Di Wang X."))
+
     def test_non_riconosciuta(self):
         self.assertIsNone(parse("Revolut", "Nuove funzioni disponibili"))
 
