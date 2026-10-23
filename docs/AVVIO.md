@@ -34,6 +34,15 @@ Quando vedi `Ada è pronta su http://127.0.0.1:8765` apri **Chrome** sul telefon
 
 Per lasciarla attiva in background: `nohup sh scripts/ada.sh > ~/ada.log 2>&1 &`
 
+## Riavviare Ada (dopo un aggiornamento o se non si apre)
+Un solo comando: ferma la copia in corso, la fa ripartire e ti dice subito se è partita; se no, mostra le ultime righe del log con l'errore.
+```
+cd ~/contabilita
+git pull
+sh scripts/riavvia.sh
+```
+Se scrive «Ada NON è partita», copia quelle righe e mandale a chi ti aiuta: dicono il motivo.
+
 ## Se il telefono si spegne o si riavvia
 Il programma si ferma, ma **non perdi niente**: database, prompt, fatture e chiavi restano nei file di Termux. Per rilanciarla a mano, in Termux:
 ```
@@ -96,9 +105,8 @@ Le routine girano solo mentre Ada è accesa (il processo in Termux). Se il telef
 Qualunque app del telefono può raggiungere Ada su `localhost`. Per questo Ada **rifiuta** di salvare codici (script fatture) e di aggiornarsi finché non imposti un token di accesso. In Termux, una volta:
 ```
 echo "export ADA_TOKEN=$(head -c 18 /dev/urandom | base64 | tr -d '/+=')" >> ~/.ada.env
-pkill -f src.ada.server
 cd ~/contabilita
-nohup sh scripts/ada.sh > ~/ada.log 2>&1 &
+sh scripts/riavvia.sh
 ```
 Poi copialo negli appunti, senza vederlo, e incollalo quando Ada lo chiede in Chrome (il browser lo ricorda):
 ```
