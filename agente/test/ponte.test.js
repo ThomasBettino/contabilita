@@ -168,5 +168,25 @@ console.log('rapporto.js');
   prova('al mattino racconta la notte e svuota', mattino.push && /stanotte/.test(leggi(path.join(M, 'u/email.json')).testo) && leggi(path.join(M, 'u/sync/turno.json')).accumulate.length === 0, mattino);
 }
 
-console.log(falliti ? falliti + ' prove fallite su ' + fatti : 'tutte le ' + fatti + ' prove superate');
-process.exit(falliti ? 1 : 0);
+// Avvisi: Agente 1 deve poter chiudere (cancellare o segnare letto) un avviso per id o titolo.
+(async () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'app', 'agente-1.html'), 'utf8');
+  const m = html.match(/async function chiudiAvviso\(input\) \{[\s\S]*?\n  \}\n/);
+  prova('avvisi: esiste lo strumento chiudi_avviso', !!m && /name: "chiudi_avviso"/.test(html) && /execute: chiudiAvviso/.test(html));
+  if (m) {
+    const fatto = [];
+    const S = {
+      notifiche: [{ id: 'a1', titolo: 'Fattura Verisure di settembre' }, { id: 'a2', titolo: 'Richiami di oggi' }],
+      db: { doc: (p) => ({ delete: async () => fatto.push(['del', p]), update: async (d) => fatto.push(['upd', p, d]) }) }
+    };
+    const chiudiAvviso = require('node:vm').runInNewContext('(' + m[0] + ')', { S, String, Error });
+    const r1 = await chiudiAvviso({ titolo: 'verisure' });
+    const r2 = await chiudiAvviso({ id: 'a2', azione: 'letto' });
+    const r3 = await chiudiAvviso({ titolo: 'inesistente' });
+    prova('avvisi: cancella per titolo, segna letto per id, nessun falso positivo',
+      r1.chiusi === 1 && r2.chiusi === 1 && r3.chiusi === 0 &&
+      JSON.stringify(fatto) === JSON.stringify([['del', 'notifiche/a1'], ['upd', 'notifiche/a2', { letta: true }]]), fatto);
+  }
+  console.log(falliti ? falliti + ' prove fallite su ' + fatti : 'tutte le ' + fatti + ' prove superate');
+  process.exit(falliti ? 1 : 0);
+})();

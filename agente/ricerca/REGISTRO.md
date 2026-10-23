@@ -2,6 +2,13 @@
 
 Ogni correzione e ogni miglioria che entra (con il sì di Thomas) aggiunge qui una voce in cima: data, tipo, titolo, perché, file, prove, approvata il.
 
+## 2026-10-23 · Agente 1 può chiudere o cancellare un avviso
+- **Tipo:** miglioria (compito di Thomas).
+- **Perché:** Thomas voleva far sparire l'avviso della fattura Verisure di settembre, già girata allo studio Agosti, ma Agente 1 sapeva solo creare avvisi.
+- **File:** `agente/app/agente-1.html` (strumento `chiudi_avviso`), `agente/test/ponte.test.js`.
+- **Prove:** 36 prove superate; la prova nuova falliva senza la modifica.
+- **Approvata il:** 23/10 alle 8:51. Applicata in una sessione di manutenzione, perché l'attività della Ricerca non ha ancora il repository collegato.
+
 ## 2026-10-23 · Nasce il Reparto Ricerca
 - **Tipo:** miglioria.
 - **Perché:** Thomas vuole una squadra che trovi da sola i bug e gli errori, prepari le correzioni e le migliorie già provate e gliele proponga: entrano col suo sì, e le novità arrivano anche nel briefing della sera.
