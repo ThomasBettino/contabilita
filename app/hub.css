@@ -226,3 +226,6 @@ dialog h4 { margin: 16px 0 8px; font-size: 12.5px; text-transform: uppercase; le
 .trascrizione { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13.5px; color: var(--tenue); margin: 6px 0 0; }
 .segmento button:disabled { opacity: .5; }
 #ritmo { display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; align-self: stretch; }
+.timer { display: flex; flex-direction: column; gap: 5px; }
+.timer-barra { height: 4px; border-radius: 4px; background: var(--linea); overflow: hidden; }
+.timer-barra span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--cy), #9b7bff); transition: width 1s linear; }

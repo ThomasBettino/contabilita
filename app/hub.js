@@ -174,6 +174,10 @@ function disegna(s) {
   disegnaCollaudi(s.collaudi || []);
   disegnaStudio(s.appunti || [], s.libri || []);
   disegnaRoutine(s.routine || [], s.consumo);
+  for (const [nome, prefisso] of [["collaudo", "Prossimo collaudo"], ["studio", "Prossimo studio"], ["lettura", "Prossima lettura"]]) {
+    impostaTimer($("timer-" + nome), (s.routine || []).find((r) => r.nome === nome), prefisso);
+  }
+  ticTimer();
   disegnaFatture(s.fatture || {});
   disegnaIdee(s.idee || []);
   disegnaAggiornamento(s.token_attivo, s.versione);
@@ -326,8 +330,45 @@ function disegnaStudio(appunti, libri) {
     : h("div", { class: "vuoto" }, "Ancora nessun appunto."));
 }
 
+/* ---------- timer tra un lavoro e l'altro ---------- */
+const due = (n) => String(n).padStart(2, "0");
+const tra = (s) => s >= 3600 ? `${Math.floor(s / 3600)} h ${due(Math.floor(s % 3600 / 60))} min`
+  : s >= 600 ? `${Math.floor(s / 60)} min`
+  : s >= 60 ? `${Math.floor(s / 60)} min ${due(s % 60)} s` : `${s} s`;
+function oraDi(ts) {
+  const d = new Date(ts * 1000), oggi = new Date().toDateString() === d.toDateString();
+  return d.toLocaleString("it-IT", oggi ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+function impostaTimer(el, r, prefisso) {
+  if (!el) return;
+  if (r && r.attiva) {
+    el.dataset.prossima = r.prossima; el.dataset.durata = r.ogni_min ? r.ogni_min * 60 : 86400; el.dataset.prefisso = prefisso;
+  } else {
+    delete el.dataset.prossima;
+    const testo = el.querySelector(".timer-testo") || el;
+    testo.textContent = r ? "In pausa: nessun timer attivo." : "";
+  }
+}
+function ticTimer() {
+  const adesso = Date.now() / 1000;
+  document.querySelectorAll("[data-prossima]").forEach((el) => {
+    const prossima = +el.dataset.prossima, resta = Math.max(0, Math.floor(prossima - adesso));
+    (el.querySelector(".timer-testo") || el).textContent = resta
+      ? `${el.dataset.prefisso}: tra ${tra(resta)} (${oraDi(prossima)})` : `${el.dataset.prefisso}: sta per partire…`;
+    const barra = el.querySelector(".timer-barra span");
+    if (barra) barra.style.width = Math.min(100, Math.max(0, 100 * (1 - resta / +el.dataset.durata))) + "%";
+  });
+}
+setInterval(() => { if (!document.hidden) ticTimer(); }, 1000);
+
 const quandoRoutine = (r) => r.ora ? `ogni giorno alle ${r.ora}`
   : r.ogni_min % 60 === 0 ? `ogni ${r.ogni_min / 60} ${r.ogni_min === 60 ? "ora" : "ore"}` : `ogni ${r.ogni_min} minuti`;
+
+function timerRoutine(r) {
+  const el = h("div", { class: "timer" }, h("span", { class: "timer-testo meta" }), h("div", { class: "timer-barra" }, h("span")));
+  impostaTimer(el, r, "Prossima esecuzione");
+  return el;
+}
 
 function disegnaRoutine(routine, c) {
   const fmt = (n) => new Intl.NumberFormat("it-IT").format(n);
@@ -345,6 +386,7 @@ function disegnaRoutine(routine, c) {
         h("span", { class: "tag" }, quandoRoutine(r))),
       h("b", null, r.nome.replace(/_/g, " ")), h("span", null, r.descrizione),
       r.ultima ? h("span", { class: "meta" }, `Ultima: ${quando(r.ultima)} · ${r.esito || ""}`) : h("span", { class: "meta" }, "Mai eseguita"),
+      timerRoutine(r),
       h("div", { class: "azioni" },
         h("button", { class: "secondario", type: "button", onclick: esegui }, "Esegui ora"),
         h("button", { class: "secondario", type: "button", onclick: alterna }, r.attiva ? "Disattiva" : "Attiva")));
