@@ -1,6 +1,6 @@
 # Collegare il controllo del telefono (ADB via Termux)
 
-Serve ad Ada per guardare e usare lo schermo (ad esempio cercare su Amazon). Si attiva una volta, richiede Android 11 o più recente e il wifi acceso.
+Serve ad Ada per guardare e usare lo schermo (ad esempio cercare su Amazon). Si attiva una volta, richiede Android 11 o più recente e il wifi acceso solo durante la configurazione (poi si può usare il 5G, vedi 4 bis).
 
 ## 1. Opzioni sviluppatore
 1. Impostazioni, Informazioni sul telefono, Informazioni sul software.
@@ -35,6 +35,20 @@ Deve comparire una riga con `device`. Se ne compaiono più di una, imposta quale
 export ADA_ADB_SERIALE=localhost:PORTA_PRINCIPALE
 ```
 (mettilo anche in `~/.ada.env`).
+
+## 4 bis. Usare solo i dati del telefono (5G)
+Il Debug wireless vuole un wifi, ma solo per questa configurazione. Quando `adb devices` mostra il telefono, fissa una porta che funziona anche senza wifi:
+```
+adb tcpip 5555
+adb connect localhost:5555
+adb devices
+```
+Poi **spegni il wifi** e rilancia `adb devices`: deve restare una riga con `device`. Se lo vede, da qui in avanti basta il 5G. Imposta anche:
+```
+export ADA_ADB_SERIALE=localhost:5555
+```
+Se senza wifi il collegamento cade (dipende dal telefono), piano B: attiva l'**hotspot personale** del telefono prima di usare il Debug wireless, perché Android lo considera una rete wifi.
+Dopo ogni **riavvio** del telefono la modalità 5555 si perde: serve un wifi per pochi minuti e si ripetono questi comandi.
 
 ## 5. Prova
 Avvia Ada come da `docs/AVVIO.md`. In alto compare il tasto **⏹** quando il telefono è collegato: toccalo per fermare tutto all'istante, toccalo di nuovo per riattivare.
