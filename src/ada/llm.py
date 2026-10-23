@@ -8,6 +8,10 @@ URL = "https://api.anthropic.com/v1/messages"
 MODELLO = "claude-sonnet-5-5"
 
 
+# Separa le istruzioni stabili (che si possono mettere in cache) dal contesto del momento (ora, stato).
+MARCATORE = "\n\n##CONTESTO_DEL_MOMENTO##\n"
+
+
 class ErroreLLM(Exception):
     pass
 
@@ -26,8 +30,12 @@ class Claude:
         corpo = {"model": self.modello, "max_tokens": max_tokens, "system": system, "messages": messaggi}
         if strumenti:
             corpo["tools"] = strumenti
+        stabile, _, volatile = system.partition(MARCATORE)
+        corpo["system"] = stabile + ("\n\n" + volatile if volatile else "")  # senza cache: un testo solo
         if self.cache:
-            corpo["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+            corpo["system"] = [{"type": "text", "text": stabile, "cache_control": {"type": "ephemeral"}}]
+            if volatile:
+                corpo["system"].append({"type": "text", "text": volatile})  # cambia spesso: fuori dalla cache
             if strumenti:
                 corpo["tools"] = [*strumenti[:-1], {**strumenti[-1], "cache_control": {"type": "ephemeral"}}]
         return corpo

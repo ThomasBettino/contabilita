@@ -77,14 +77,21 @@ function testoRicco(testo) {
   });
   return frag;
 }
-function bolla(ruolo, testo, extra) {
-  return h("div", { class: "msg " + ruolo + (extra ? " " + extra : "") }, ruolo === "ada" && !extra ? testoRicco(testo) : testo);
+/* Sotto la risposta: cosa ha fatto Ada per arrivarci, così si vede che ha lavorato. */
+function blocchiAzioni(azioni) {
+  if (!azioni || !azioni.length) return null;
+  return h("div", { class: "fatto-tool" }, azioni.map((a) => h("span", { class: "riga-tool" }, "✓ ",
+    h("b", null, NOMI_STRUMENTI[a.nome] || a.nome), a.esito ? " — " + a.esito.split("\n")[0].slice(0, 110) : "")));
+}
+function bolla(ruolo, testo, extra, azioni) {
+  return h("div", { class: "msg " + ruolo + (extra ? " " + extra : "") },
+    ruolo === "ada" && !extra ? testoRicco(testo) : testo, blocchiAzioni(azioni));
 }
 
 async function caricaChat() {
   const { messaggi } = await api("/api/chat");
   svuota($("msgs"), messaggi.length
-    ? messaggi.map((m) => bolla(m.ruolo, m.testo))
+    ? messaggi.map((m) => bolla(m.ruolo, m.testo, null, m.azioni))
     : h("div", { class: "vuoto" }, "Ciao, sono Ada. Gestisco io il team: dimmi cosa ti serve, oppure chiedimi come sta andando tutto."));
   scorriChat();
 }
@@ -109,8 +116,8 @@ async function manda(testo) {
     } catch (e) { /* si riprova al prossimo giro */ }
   }, 1500);
   try {
-    const { risposta } = await api("/api/chat", { messaggio: testo });
-    pensa.className = "msg ada"; pensa.replaceChildren(testoRicco(risposta));
+    const { risposta, azioni } = await api("/api/chat", { messaggio: testo });
+    pensa.className = "msg ada"; pensa.replaceChildren(testoRicco(risposta), blocchiAzioni(azioni));
   } catch (e) {
     pensa.className = "msg ada"; pensa.textContent = "Non riesco a rispondere: " + e.message;
   } finally {
@@ -413,7 +420,7 @@ $("btn-stop").addEventListener("click", async () => {
 const ICONE_AGENTE = { ada: "✨", contabilita_piva: "🧾", contabilita_privata: "💳", quotidiano: "🗓️", sviluppo: "🛠️",
   clienti_vendite: "🤝", acquisti: "🛒", revisore: "🔍" };
 const NOMI_STRUMENTI = {
-  riepilogo_spese: "Legge le spese", riepilogo_fatture: "Legge le fatture", annota_segnalazione: "Annota i problemi",
+  riepilogo_spese: "Legge le spese", aggiungi_regola_prompt: "Aggiunge una regola a un prompt", riepilogo_fatture: "Legge le fatture", annota_segnalazione: "Annota i problemi",
   richiedi_approvazione: "Chiede il tuo ok", telefono_collega: "Collega lo schermo", telefono_schermo: "Guarda lo schermo",
   telefono_tocca: "Tocca lo schermo", telefono_scrivi: "Scrive sullo schermo", telefono_scorri: "Scorre le pagine",
   telefono_vai: "Indietro e home", telefono_apri: "Apre app e pagine", proponi_acquisto: "Propone acquisti",

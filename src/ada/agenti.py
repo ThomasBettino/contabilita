@@ -2,6 +2,8 @@
 import shutil
 from pathlib import Path
 
+from .llm import MARCATORE
+
 SEED = Path(__file__).resolve().parents[2] / "agenti"
 
 AGENTI = {
@@ -46,5 +48,7 @@ class Squadra:
     def scrivi(self, nome: str, testo: str) -> None:
         self._file(nome).write_text(testo, encoding="utf-8")
 
-    def system(self, nome: str, contesto: str = "") -> str:
-        return f"{self.prompt(nome).strip()}\n\n{contesto}\n\n{REGOLE}".strip()
+    def system(self, nome: str, stabile: str = "", volatile: str = "") -> str:
+        """Istruzioni stabili (in cache) + contesto del momento dopo il marcatore."""
+        base = f"{self.prompt(nome).strip()}\n\n{stabile}\n\n{REGOLE}".strip()
+        return base + (MARCATORE + volatile if volatile else "")

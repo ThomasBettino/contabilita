@@ -169,9 +169,14 @@ def crea_handler(ctx):
             if metodo == "GET" and path == "/api/lavori":
                 return {"lavori": [{"nome": n, "titolo": AGENTI[n][0], **v} for n, v in list(ctx.ada.lavori.items()) if n in AGENTI]}
             if metodo == "GET" and path == "/api/chat":
-                return {"messaggi": ctx.db.tutti("SELECT ts, ruolo, testo FROM chat ORDER BY id DESC LIMIT 50")[::-1]}
+                msgs = ctx.db.tutti("SELECT ts, ruolo, testo, azioni FROM chat ORDER BY id DESC LIMIT 50")[::-1]
+                for m in msgs:
+                    m["azioni"] = json.loads(m["azioni"]) if m["azioni"] else []
+                return {"messaggi": msgs}
             if metodo == "POST" and path == "/api/chat":
-                return {"risposta": ctx.ada.chiacchiera(corpo.get("messaggio", ""))}
+                risposta = ctx.ada.chiacchiera(corpo.get("messaggio", ""))
+                ultima = ctx.db.uno("SELECT azioni FROM chat WHERE ruolo='ada' ORDER BY id DESC LIMIT 1")
+                return {"risposta": risposta, "azioni": json.loads(ultima["azioni"]) if ultima and ultima["azioni"] else []}
             if path == "/api/impostazioni/fatture" and metodo == "POST":
                 if not ctx.token:  # senza token qualunque app del telefono potrebbe leggere o cambiare i codici
                     raise PermissionError("Per salvare i codici nell'app serve prima un token di accesso (ADA_TOKEN): vedi docs/FATTURE.md.")

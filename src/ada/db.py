@@ -45,6 +45,10 @@ class DB:
         self.c.row_factory = sqlite3.Row
         self.lock = threading.Lock()
         self.c.executescript(SCHEMA)
+        for colonna, tipo in (("azioni", "TEXT"),):  # database creati prima: si aggiunge la colonna
+            if colonna not in [r[1] for r in self.c.execute("PRAGMA table_info(chat)")]:
+                self.c.execute(f"ALTER TABLE chat ADD COLUMN {colonna} {tipo}")
+        self.c.commit()
 
     def esegui(self, sql, args=()):
         with self.lock:

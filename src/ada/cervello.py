@@ -35,7 +35,7 @@ MAX_IDEE_APERTE = 6
 IDEE_APERTE = "('proposta','approvata')"
 
 # Fissato nel codice (non in un prompt che Ada può riscrivere): il capo decide e agisce.
-MANDATO = """COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Per correggere un prompt usa aggiungi_regola_prompt, una regola breve alla volta: è il modo più semplice e sicuro; migliora_prompt (riscrittura intera) solo se serve davvero. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se dici che fai qualcosa, chiama subito lo strumento: non promettere e basta. Se una opzione è chiaramente la migliore, non elencarne tre."""
+MANDATO = """COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Per correggere un prompt usa aggiungi_regola_prompt, una regola breve alla volta: è il modo più semplice e sicuro; migliora_prompt (riscrittura intera) solo se serve davvero. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se dici che fai qualcosa, chiama subito lo strumento: non promettere e basta. Il tetto di consumo riguarda solo le routine automatiche: non limitare mai per quel motivo il lavoro che ti chiede l'utente. Se una opzione è chiaramente la migliore, non elencarne tre."""
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese; la lettura delle notifiche non dipende dal collegamento dello schermo); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
@@ -128,6 +128,7 @@ class Ada:
     def __init__(self, db, squadra, soldi, llm, mano=None, max_giri=6):
         self.db, self.squadra, self.soldi, self.llm, self.mano, self.max_giri = db, squadra, soldi, llm, mano, max_giri
         self.lock = threading.Lock()
+        self._azioni_ciclo = []   # cosa ha fatto l'ultimo ciclo di strumenti (mostrato sotto il messaggio)
         self.lavori = {}          # agente -> {"cosa", "da"}: chi sta lavorando adesso e a cosa (per il popup)
         self.automatico = False   # vero durante una routine: niente schermo senza l'utente
         self.notifica = None      # funzione(titolo, testo, id) impostata dal server
@@ -182,7 +183,8 @@ class Ada:
 
     def _contesto(self, chi):
         aperte = self.db.tutti("SELECT id, agente, problema FROM segnalazioni WHERE stato='aperta' ORDER BY id LIMIT 10")
-        righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.", MANDATO if chi == "ada" else "", CAPACITA,
+        stabili = [MANDATO if chi == "ada" else "", CAPACITA]  # uguali a ogni richiesta: finiscono in cache
+        righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.",
                  TELEFONO_SI if self.mano and self.mano.disponibile() else TELEFONO_NO]
         if chi == "ada":
             routine = self.db.tutti("SELECT nome, ora, ogni_min, attiva FROM routine ORDER BY id")
@@ -193,12 +195,19 @@ class Ada:
             righe.append("TEAM: " + "; ".join(f"{k} ({v[1]})" for k, v in AGENTI.items() if k != "ada"))
             if aperte:
                 righe.append("SEGNALAZIONI APERTE: " + " | ".join(f"#{s['id']} {s['agente']}: {s['problema']}" for s in aperte))
-        return "\n".join(righe)
+        return "\n".join(x for x in stabili if x), "\n".join(righe)
 
     # ---------- ciclo con strumenti ----------
     def _ciclo(self, chi, messaggi, strumenti):
-        system = self.squadra.system(chi, self._contesto(chi))
-        testo, azioni, spinte, spazio = "", [], 0, MAX_TOKEN
+        azioni = []
+        try:
+            return self._ciclo_base(chi, messaggi, strumenti, azioni)
+        finally:
+            self._azioni_ciclo = azioni  # per mostrarle sotto la risposta (le chiamate annidate finiscono prima)
+
+    def _ciclo_base(self, chi, messaggi, strumenti, azioni):
+        system = self.squadra.system(chi, *self._contesto(chi))
+        testo, spinte, spazio = "", 0, MAX_TOKEN
         for _ in range(GIRI.get(chi, self.max_giri)):
             r = self.llm(system, messaggi, strumenti, max_tokens=spazio)
             self._conta(r)
@@ -228,7 +237,7 @@ class Ada:
             for b in blocchi:
                 if b.get("type") == "tool_use":
                     esito = self._esegui(chi, b["name"], b.get("input") or {})
-                    azioni.append(f"{b['name']}: {str(esito)[:80]}")
+                    azioni.append({"nome": b["name"], "esito": str(esito)[:140]})
                     esiti.append({"type": "tool_result", "tool_use_id": b["id"], "content": esito})
             messaggi.append({"role": "user", "content": esiti})
         return testo or self._riassunto(azioni, limite=True)
@@ -237,7 +246,7 @@ class Ada:
     def _riassunto(azioni, limite=False):
         """Una risposta non è mai vuota: se manca il testo si racconta cosa è stato fatto."""
         if azioni:
-            return "Ho eseguito: " + "; ".join(azioni[-4:])
+            return "Ho eseguito: " + "; ".join(f"{a['nome']}: {a['esito'][:80]}" for a in azioni[-4:])
         return "Ho raggiunto il limite di passaggi per questa richiesta." if limite else "Ho finito, ma non ho nulla da riferire."
 
     def _esegui(self, chi, nome, args):
@@ -520,15 +529,23 @@ class Ada:
 
     # ---------- conversazione ----------
     def _storia(self):
-        righe = self.db.tutti("SELECT ruolo, testo FROM chat ORDER BY id DESC LIMIT 14")[::-1]
+        righe = self.db.tutti("SELECT ruolo, testo FROM chat ORDER BY id DESC LIMIT 12")[::-1]
         msgs = []
-        for r in righe:
+        for i, r in enumerate(righe):
+            t = r["testo"]
+            if i < len(righe) - 2 and len(t) > 500:  # i messaggi vecchi e lunghi si accorciano: costano ogni volta
+                t = t[:500] + "…"
             ruolo = "user" if r["ruolo"] == "utente" else "assistant"
             if msgs and msgs[-1]["role"] == ruolo:
-                msgs[-1]["content"] += "\n" + r["testo"]
+                msgs[-1]["content"] += "\n" + t
             elif msgs or ruolo == "user":
-                msgs.append({"role": ruolo, "content": r["testo"]})
+                msgs.append({"role": ruolo, "content": t})
         return msgs
+
+    def _dici(self, testo, azioni=None):
+        """Un messaggio di Ada in chat, con sotto le azioni che ha compiuto per arrivarci."""
+        self.db.esegui("INSERT INTO chat (ts, ruolo, testo, azioni) VALUES (?,?,?,?)",
+                       (int(time.time()), "ada", testo, json.dumps(azioni, ensure_ascii=False) if azioni else None))
 
     def _senza_cervello(self, testo):
         base = ("Sono Ada, ma il mio cervello non è ancora collegato: manca la chiave ANTHROPIC_API_KEY "
@@ -543,16 +560,18 @@ class Ada:
             raise ValueError("Messaggio vuoto.")
         with self.lock:
             self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)", (int(time.time()), "utente", testo))
+            azioni = []
             if not self.llm.disponibile:
                 risposta = self._senza_cervello(testo)
             else:
                 try:
                     with self._lavora("ada", "Sto rispondendo alla tua chat"):
                         risposta = self._ciclo("ada", self._storia(), STRUMENTI_ADA) or "…"
+                    azioni = self._azioni_ciclo
                 except ErroreLLM as e:
                     self.log("ada", "errore", e)
                     risposta = f"Non riesco a collegarmi al mio cervello in questo momento ({str(e)[:160]}). Riprova tra poco."
-            self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)", (int(time.time()), "ada", risposta))
+            self._dici(risposta, azioni)
         return risposta
 
     def ciclo_miglioramento(self, automatico=False):
@@ -575,8 +594,7 @@ class Ada:
                 return f"Ciclo interrotto: {str(e)[:160]}"
             finally:
                 self.automatico = False
-            self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)",
-                           (int(time.time()), "ada", "Ciclo di miglioramento:\n" + risposta))
+            self._dici("Ciclo di miglioramento:\n" + risposta, self._azioni_ciclo)
         return risposta
 
     # ---------- lavoro automatico ----------
@@ -597,8 +615,7 @@ class Ada:
                 self.automatico = False
             if risposta:
                 titolo = nome.replace("_", " ").capitalize()
-                self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)",
-                               (int(time.time()), "ada", f"{titolo}:\n{risposta}"))
+                self._dici(f"{titolo}:\n{risposta}", self._azioni_ciclo)
         if risposta:
             self.avvisa("Ada", f"{nome.replace('_', ' ').capitalize()}: pronto, aprila per leggerlo.", "ada-routine")
         return risposta[:300] or "Nessun risultato."
@@ -621,7 +638,8 @@ class Ada:
         righe += ["ATTIVITÀ RECENTI (errori compresi):"] + [
             f"- {time.strftime('%d/%m %H:%M', time.localtime(a['ts']))} {a['agente']}: {a['azione']} {a['dettaglio'] or ''}"[:140]
             for a in attivita]
-        righe.append(f"CONSUMO OGGI: {c['totale']} token in totale, di cui {c['automatici']} nei lavori automatici (tetto {c['limite']})")
+        righe.append(f"CONSUMO OGGI: {c['totale']} token in totale (la chat con l'utente non ha tetto e non va mai limitata); "
+                     f"lavori automatici {c['automatici']} su un tetto di {c['limite']}")
         return "\n".join(righe)
 
     def _proponi_idea(self, args):
