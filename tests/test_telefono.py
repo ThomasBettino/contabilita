@@ -23,11 +23,19 @@ def xml(*nodi):
 
 
 class FakeAdb:
-    def __init__(self, *schermate, connesso=True):
-        self.schermate, self.azioni, self.connesso = list(schermate), [], connesso
+    def __init__(self, *schermate, connesso=True, fallisce=False):
+        self.schermate, self.azioni, self.connesso, self.fallisce = list(schermate), [], connesso, fallisce
 
     def collegato(self):
         return self.connesso
+
+    def collega(self, porta=None):
+        self.azioni.append(("collega", porta))
+        if self.fallisce:
+            from src.telefono.adb import ErroreAdb
+            raise ErroreAdb("non trovo la porta da sola")
+        self.connesso = True
+        return "Telefono collegato."
 
     def dump(self):
         return self.schermate.pop(0) if len(self.schermate) > 1 else self.schermate[0]
@@ -131,6 +139,69 @@ class TestMano(unittest.TestCase):
             self.assertTrue(m.apri(url=url).startswith("BLOCCATO"), url)
         m.apri(url="https://www.amazon.it/s?k=cuffie")
         self.assertEqual(m.adb.azioni, [("url", "https://www.amazon.it/s?k=cuffie")])
+
+
+def runner_adb(risposte):
+    from types import SimpleNamespace
+    chiamate = []
+
+    def run(cmd, capture_output, timeout):
+        chiamate.append(" ".join(cmd[1:]))
+        for chiave, out in risposte:
+            if chiave in " ".join(cmd):
+                return SimpleNamespace(returncode=0, stdout=out.encode(), stderr=b"")
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+    return run, chiamate
+
+
+MDNS = "List of discovered mdns services\nadb-AB12\t_adb-tls-connect._tcp.\t192.168.1.20:41937\n"
+
+
+class TestCollega(unittest.TestCase):
+    def adb(self, *risposte):
+        from src.telefono.adb import Adb
+        run, chiamate = runner_adb(risposte)
+        return Adb(esegui=run, dormi=lambda s: None), chiamate
+
+    def test_scopre_la_porta_e_fissa_5555(self):
+        adb, chiamate = self.adb(("mdns services", MDNS), ("connect localhost:41937", "connected to localhost:41937"),
+                                 ("connect localhost:5555", "connected to localhost:5555"))
+        self.assertIn("localhost:5555", adb.collega())
+        self.assertEqual(adb.seriale, "localhost:5555")
+        self.assertIn("-s localhost:41937 tcpip 5555", chiamate)
+
+    def test_porta_manuale_senza_mdns(self):
+        adb, _ = self.adb(("connect localhost:41937", "connected to localhost:41937"))
+        adb.collega(41937)
+        self.assertEqual(adb.seriale, "localhost:41937")  # 5555 non risponde: resta la porta wireless
+
+    def test_senza_porta_e_senza_mdns_spiega_cosa_fare(self):
+        from src.telefono.adb import ErroreAdb
+        adb, _ = self.adb()
+        with self.assertRaises(ErroreAdb) as e:
+            adb.collega()
+        self.assertIn("inseriscila", str(e.exception))
+
+    def test_rifiuto_e_porta_non_valida(self):
+        from src.telefono.adb import ErroreAdb
+        adb, _ = self.adb(("connect", "failed to connect to localhost:41937"))
+        with self.assertRaises(ErroreAdb):
+            adb.collega(41937)
+        with self.assertRaises(ErroreAdb):
+            adb.collega(80)
+        with self.assertRaises(ValueError):
+            adb.collega("abc")
+
+    def test_guarda_prova_il_collegamento_da_sola(self):
+        m = Mano(FakeAdb(PRODOTTO, connesso=False), pausa=0, dormi=lambda s: None)
+        self.assertIn("App in primo piano", m.guarda())
+        self.assertEqual(m.adb.azioni[0], ("collega", None))
+
+    def test_guarda_spiega_se_non_riesce(self):
+        m = Mano(FakeAdb(PRODOTTO, connesso=False, fallisce=True), pausa=0, dormi=lambda s: None)
+        r = m.guarda()
+        self.assertIn("Telefono non collegato", r)
+        self.assertIn("Debug wireless", r)
 
 
 class Base(unittest.TestCase):
@@ -238,6 +309,9 @@ class TestServerAcquisti(Base):
         self.assertEqual(post("/api/approvazioni/1", {"esito": "approva", "opzione": 1})[1]["stato"], "scelta")
         stato = json.load(urllib.request.urlopen(base + "/api/stato"))
         self.assertEqual(stato["approvazioni"][0]["stato"], "scelta")
+        self.assertEqual(post("/api/telefono/collega", {"porta": "abc"})[0], 400)
+        self.assertEqual(post("/api/telefono/collega", {"porta": 80})[0], 400)
+        self.assertEqual(post("/api/telefono/collega", {"porta": 41937})[1]["messaggio"], "Telefono collegato.")
         self.assertEqual(post("/api/telefono", {"fermo": True})[1], {"collegato": True, "fermo": True})
         self.assertEqual(post("/api/approvazioni/1/chiudi", {"esito": "annullato"})[0], 200)
 

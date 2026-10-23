@@ -55,6 +55,8 @@ T_SCORRI = _tool("telefono_scorri", "Scorre la pagina.", {"direzione": {"type": 
 T_VAI = _tool("telefono_vai", "Tasto indietro o home.", {"azione": {"type": "string", "enum": ["indietro", "home"]}}, ["azione"])
 T_APRI = _tool("telefono_apri", "Apre un'app (amazon, chrome, whatsapp, gmail, calendario o nome pacchetto) oppure un indirizzo https.",
                {"app": _S, "url": _S}, [])
+T_COLLEGA = _tool("telefono_collega", "Ricollega lo schermo del telefono (cerca da sola la porta del Debug wireless, oppure usa quella indicata dall'utente).",
+                  {"porta": _N}, [])
 T_PROPONI = _tool("proponi_acquisto",
                   "Mostra all'utente fino a 5 opzioni d'acquisto da confrontare. Usa solo dati letti davvero sullo schermo.",
                   {"richiesta": _S, "opzioni": {"type": "array", "items": {"type": "object", "properties": {
@@ -65,7 +67,7 @@ T_PROPONI = _tool("proponi_acquisto",
 T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata finale e ora tocca all'utente premere il tasto.",
                  {"id": _N, "nota": _S}, ["id", "nota"])
 
-STRUMENTI_TELEFONO = [T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
+STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
 STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI]
@@ -269,6 +271,8 @@ class Ada:
         if not self.mano:
             return TELEFONO_NO
         m = self.mano
+        if nome == "telefono_collega":
+            return m.collega(args.get("porta"))
         if nome == "telefono_schermo":
             return m.guarda()
         if nome == "telefono_tocca":

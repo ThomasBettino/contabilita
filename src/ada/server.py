@@ -128,6 +128,19 @@ def crea_handler(ctx):
                 return {"messaggi": ctx.db.tutti("SELECT ts, ruolo, testo FROM chat ORDER BY id DESC LIMIT 50")[::-1]}
             if metodo == "POST" and path == "/api/chat":
                 return {"risposta": ctx.ada.chiacchiera(corpo.get("messaggio", ""))}
+            if path == "/api/telefono/collega" and metodo == "POST":
+                if ctx.ada.mano is None:
+                    raise ValueError("Telefono non configurato.")
+                porta = corpo.get("porta")
+                if porta not in (None, ""):
+                    porta = int(porta)
+                    if not 1024 <= porta <= 65535:
+                        raise ValueError("Porta non valida.")
+                else:
+                    porta = None
+                msg = ctx.ada.mano.collega(porta)
+                ctx.ada.log("utente", "collegamento telefono", msg[:120])
+                return {**ctx.ada.mano.stato(), "messaggio": msg}
             if path == "/api/telefono" and metodo == "POST":
                 if ctx.ada.mano is None:
                     raise ValueError("Telefono non configurato.")

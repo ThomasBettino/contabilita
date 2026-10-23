@@ -29,9 +29,23 @@ class Mano:
             return "FERMO: l'utente ha fermato il controllo del telefono. Non fare altro e avvisalo."
         return None
 
+    def collega(self, porta=None) -> str:
+        if (m := self._via_libera()):
+            return m
+        try:
+            return self.adb.collega(porta)
+        except (ErroreAdb, ValueError) as e:
+            return f"Collegamento non riuscito: {e}"
+
     def guarda(self) -> str:
         if (m := self._via_libera()):
             return m
+        if not self.adb.collegato():  # una prova automatica prima di arrendersi
+            try:
+                self.adb.collega()
+            except (ErroreAdb, ValueError) as e:
+                return (f"Telefono non collegato ({e}). Chiedi all'utente di accendere il Debug wireless "
+                        "con il wifi e di toccare Collega in Ada, oppure di dirti la porta.")
         try:
             self.pacchetto, self.elementi = parse(self.adb.dump())
         except Exception as e:  # adb assente o XML illeggibile

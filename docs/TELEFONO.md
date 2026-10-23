@@ -58,6 +58,15 @@ export ADA_ADB_SERIALE=localhost:5555
 - Dopo un riavvio del telefono si rifà lo stesso comando.
 - Se in futuro serve il controllo senza wifi, le strade sono Shizuku o un computer con cavo USB (`adb tcpip 5555` da USB resta aperto col 5G fino al riavvio).
 
+## Uso quotidiano: un tocco, senza Termux
+Quando ti serve lo schermo:
+1. Collegati a un wifi e accendi **Debug wireless** (Impostazioni, Opzioni sviluppatore).
+2. In Ada tocca **Collega schermo** (compare in alto quando il telefono non è collegato).
+3. Lascia il campo **vuoto**: Ada cerca la porta da sola. Se non la trova, scrivi la porta che vedi nella schermata Debug wireless (le 5 cifre dopo i due punti).
+4. Quando hai finito, spegni Debug wireless.
+
+Ada prova a ricollegarsi da sola anche quando deve usare lo schermo. Il vecchio comando `sh scripts/telefono.sh PORTA` resta come piano B.
+
 ## 5. Prova
 Avvia Ada come da `docs/AVVIO.md`. In alto compare il tasto **⏹** quando il telefono è collegato: toccalo per fermare tutto all'istante, toccalo di nuovo per riattivare.
 

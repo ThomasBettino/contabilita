@@ -2,6 +2,7 @@
 import re
 import shlex
 import subprocess
+import time
 import unicodedata
 
 
@@ -10,12 +11,12 @@ class ErroreAdb(Exception):
 
 
 class Adb:
-    def __init__(self, esegui=None, seriale=None, timeout=20):
-        self._run, self.seriale, self.timeout = esegui or subprocess.run, seriale, timeout
+    def __init__(self, esegui=None, seriale=None, timeout=20, dormi=time.sleep):
+        self._run, self.seriale, self.timeout, self.dormi = esegui or subprocess.run, seriale, timeout, dormi
         self._dim = None
 
-    def _cmd(self, *args) -> str:
-        cmd = ["adb"] + (["-s", self.seriale] if self.seriale else []) + list(args)
+    def _cmd(self, *args, con_seriale=True) -> str:
+        cmd = ["adb"] + (["-s", self.seriale] if self.seriale and con_seriale else []) + list(args)
         try:
             r = self._run(cmd, capture_output=True, timeout=self.timeout)
         except FileNotFoundError:
@@ -25,6 +26,49 @@ class Adb:
         if r.returncode != 0:
             raise ErroreAdb((r.stderr or b"").decode("utf-8", "replace").strip()[:200] or "adb ha dato errore")
         return (r.stdout or b"").decode("utf-8", "replace")
+
+    def scopri(self):
+        """Cerca la porta del Debug wireless annunciata sulla rete (mDNS). Restituisce (host, porta) o None."""
+        try:
+            out = self._cmd("mdns", "services", con_seriale=False)
+        except ErroreAdb:
+            return None
+        for riga in out.splitlines():
+            m = re.search(r"_adb-tls-connect.*?\s(\S+):(\d{4,5})\s*$", riga)
+            if m:
+                return m.group(1), int(m.group(2))
+        return None
+
+    def collega(self, porta=None) -> str:
+        """Collega ADB al telefono e fissa la porta 5555. Con porta=None la cerca da sola."""
+        trovato = self.scopri()
+        if porta is None:
+            if not trovato:
+                raise ErroreAdb("non trovo la porta da sola: leggila in Debug wireless e inseriscila")
+            porta = trovato[1]
+        porta = int(porta)
+        if not 1024 <= porta <= 65535:
+            raise ErroreAdb("porta non valida")
+        hosts = ["localhost"] + ([trovato[0]] if trovato and trovato[0] != "localhost" else [])
+        bersaglio = None
+        for host in hosts:
+            out = self._cmd("connect", f"{host}:{porta}", con_seriale=False)
+            if "connected" in out.lower() and "cannot" not in out.lower():
+                bersaglio = f"{host}:{porta}"
+                break
+        if not bersaglio:
+            raise ErroreAdb(f"collegamento rifiutato sulla porta {porta}: la porta è cambiata o il Debug wireless è spento")
+        self.seriale = bersaglio
+        try:  # porta fissa: sopravvive finché il wifi resta acceso
+            self._cmd("-s", bersaglio, "tcpip", "5555", con_seriale=False)
+            self.dormi(3)
+            out = self._cmd("connect", "localhost:5555", con_seriale=False)
+            if "connected" in out.lower():
+                self.seriale = "localhost:5555"
+        except ErroreAdb:
+            pass
+        self._dim = None
+        return f"Telefono collegato ({self.seriale})."
 
     def collegato(self) -> bool:
         try:

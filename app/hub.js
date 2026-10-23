@@ -101,6 +101,7 @@ function disegna(s) {
   const tel = s.telefono || {};
   const stop = $("btn-stop");
   stop.hidden = !tel.collegato;
+  $("btn-collega").hidden = !!tel.collegato;
   stop.className = "stop" + (tel.fermo ? " riattiva" : "");
   stop.textContent = tel.fermo ? "▶" : "⏹";
   stop.title = stop.ariaLabel = tel.fermo ? "Riattiva il telefono" : "Ferma subito il telefono";
@@ -215,6 +216,15 @@ function disegnaSoldi(s) {
     h("span", null, m.controparte || "(senza nome)", h("br"), h("span", { class: "meta" }, m.quando)),
     h("span", { class: "importo " + (m.importo < 0 ? "neg" : "pos") }, eur(m.importo)))));
 }
+
+$("btn-collega").addEventListener("click", async (e) => {
+  const porta = prompt("Con il wifi acceso e il Debug wireless attivo, lascia vuoto per cercare la porta da solo, oppure scrivi la porta che vedi in Debug wireless (5 cifre)", "");
+  if (porta === null) return;
+  e.target.disabled = true; toast("Mi collego al telefono…");
+  try { const r = await api("/api/telefono/collega", { porta: porta.trim() }); toast(r.messaggio); aggiorna(); }
+  catch (err) { toast(err.message); }
+  finally { e.target.disabled = false; }
+});
 
 $("btn-stop").addEventListener("click", async () => {
   const ferma = !$("btn-stop").classList.contains("riattiva");
