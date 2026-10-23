@@ -1,6 +1,19 @@
 # Progetto: sistema di assistenti AI auto-migliorante
 
-Stato: **bozza da approvare**. Nessun codice scritto finché non approvi questo documento.
+Stato: **bozza v2, da approvare**. Nessun codice scritto finché non approvi questo documento.
+
+## 0. Revisione v2: da moduli a "persona digitale"
+
+Richiesta aggiornata: non un insieme di script che preparano il lavoro, ma un agente **autonomo e con propria intelligenza**, che fa tutto ciò che faresti tu con il telefono in mano.
+
+Decisioni:
+- **Telefono:** Android. L'agente comanda lo schermo (tocca, scrive, apre app, legge) su un telefono dedicato o un emulatore Android, tramite Claude con controllo del dispositivo.
+- **Autonomia:** libero su tutto **tranne i soldi**. Email, WhatsApp, calendario, app, archivio, cancellazioni e modifiche: lo fa da solo. **Ogni pagamento o movimento di denaro chiede sempre il tuo ok** sul telefono.
+- **Architettura:** un solo agente principale ("Io digitale") che ragiona, pianifica e usa il telefono. Gli assistenti specializzati diventano **competenze/sotto-agenti** che il Capo richiama quando servono. Il ciclo di auto-miglioramento resta.
+- **Limiti da conoscere:** le app bancarie possono bloccare l'uso automatico; un errore su azioni non reversibili (messaggio inviato, dato cancellato) non si annulla. Per questo la cancellazione di dati importanti e la modifica di documenti fiscali restano tracciate con copia di sicurezza prima di ogni modifica.
+
+Dove questa sezione contraddice quelle sotto, vale questa.
+
 
 ## 1. Obiettivo
 
@@ -19,7 +32,7 @@ Il sistema si migliora da solo: quando un assistente sbaglia o manca qualcosa, i
 | Tema | Scelta |
 |---|---|
 | Autonomia del Capo | Modifiche piccole da solo, grandi con tuo ok |
-| Azioni sempre con tuo ok | Inviare email, fare pagamenti, cancellare dati, modificare documenti fiscali |
+| Azioni sempre con tuo ok | **Solo pagamenti e movimenti di denaro** (v2). Il resto è autonomo, con log e copie di sicurezza |
 | Fonti di apprendimento | Tuoi feedback, test automatici, controllo incrociato, errori ricorrenti |
 | Storico | Git + registro dei miglioramenti |
 | Esecuzione | Processo schedulato (gira anche quando non ci sei) |
