@@ -936,8 +936,8 @@ fieldset.campo-foglio{border:0;margin:0;padding:0;min-width:0}
   const membro = (k) => SQUADRA[k] || (S.squadra.agenti || {})[k] || null;
   const nomeDi = (k) => (membro(k) ? membro(k).nome : k);
   const istruzioni = (k) => (personalizzato(k) ? S.squadra.agenti[k].istruzioni || "" : S.istruzioni[k] || ISTRUZIONI_BASE[k] || "");
-  // Agente 1 ha fino a 7 strumenti suoi (email, meteo, compiti, proposte, avvisi, memoria, istruzioni): il resto dei posti va agli specialisti.
-  const maxMembri = () => Math.max(1, (S.maxStrumenti || 20) - 7);
+  // Agente 1 ha fino a 8 strumenti suoi (email, meteo, compiti, proposte, avviso nuovo, chiudi avviso, memoria, istruzioni): il resto dei posti va agli specialisti.
+  const maxMembri = () => Math.max(1, (S.maxStrumenti || 20) - 8);
   // In squadra: prima gli specialisti di base non tolti, poi quelli creati da Thomas in ordine di creazione.
   function inSquadra() {
     const spenti = new Set(S.squadra.spenti || []);
@@ -2269,6 +2269,8 @@ fieldset.campo-foglio{border:0;margin:0;padding:0;min-width:0}
     if (!cerca) throw new Error("Dimmi l'id o il titolo dell'avviso.");
     const trovati = S.notifiche.filter((n) => String(n.id).toLowerCase() === cerca || String(n.titolo || "").toLowerCase().includes(cerca));
     if (!trovati.length) return { chiusi: 0, nota: "Nessun avviso corrisponde a \"" + cerca + "\"." };
+    // Un titolo troppo generico non cancella mezza lista: oltre 3 avvisi si chiede quale.
+    if (trovati.length > 3 && !trovati.some((n) => String(n.id).toLowerCase() === cerca)) return { chiusi: 0, nota: "Corrispondono " + trovati.length + " avvisi: dimmi quale, con l'id o un titolo più preciso.", avvisi: trovati.slice(0, 8).map((n) => ({ id: n.id, titolo: n.titolo || "Avviso" })) };
     const cancella = input.azione !== "letto";
     for (const n of trovati) {
       if (cancella) await S.db.doc("notifiche/" + n.id).delete();

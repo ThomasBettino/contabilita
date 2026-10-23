@@ -183,8 +183,10 @@ console.log('rapporto.js');
     const r1 = await chiudiAvviso({ titolo: 'verisure' });
     const r2 = await chiudiAvviso({ id: 'a2', azione: 'letto' });
     const r3 = await chiudiAvviso({ titolo: 'inesistente' });
-    prova('avvisi: cancella per titolo, segna letto per id, nessun falso positivo',
-      r1.chiusi === 1 && r2.chiusi === 1 && r3.chiusi === 0 &&
+    S.notifiche = ['a', 'b', 'c', 'd'].map((x) => ({ id: 'r' + x, titolo: 'Richiamo ' + x }));
+    const r4 = await chiudiAvviso({ titolo: 'richiamo' });
+    prova('avvisi: cancella per titolo, segna letto per id, nessun falso positivo, chiede quale se sono troppi',
+      r1.chiusi === 1 && r2.chiusi === 1 && r3.chiusi === 0 && r4.chiusi === 0 && r4.avvisi.length === 4 &&
       JSON.stringify(fatto) === JSON.stringify([['del', 'notifiche/a1'], ['upd', 'notifiche/a2', { letta: true }]]), fatto);
   }
   console.log(falliti ? falliti + ' prove fallite su ' + fatti : 'tutte le ' + fatti + ' prove superate');
