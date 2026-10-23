@@ -44,7 +44,7 @@ Ada può anche creare altre routine da sola (massimo 8, ogni 30 minuti al minimo
 
 **Notifiche sul telefono:** servono Termux:API e il permesso notifiche. Impostazioni, App, **Termux:API**, Notifiche, attiva. I testi sono generici ("Ada ha bisogno di te"), senza importi, per non mostrare dati sul blocco schermo.
 
-**Costi sotto controllo:** i lavori automatici si fermano quando superano 400.000 token al giorno (cambialo con `export ADA_LIMITE_TOKEN=200000` in `~/.ada.env`). La chat con Ada non ha tetto. Il consumo di oggi lo vedi in Registro.
+**Costi sotto controllo:** i lavori automatici si fermano quando superano 400.000 token al giorno (cambialo con `export ADA_LIMITE_TOKEN=200000` in `~/.ada.env`). **La chat con Ada non consuma quel tetto e non ha limiti.** In Registro vedi il consumo totale di oggi e quello dei lavori automatici. I token della cache dei prompt contano un decimo, perché costano un decimo.
 
 **Fuso orario:** le routine usano l'ora italiana (`Europe/Rome`). Se serve un altro fuso, `export ADA_FUSO=...` in `~/.ada.env`.
 

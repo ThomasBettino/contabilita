@@ -151,6 +151,39 @@ class TestSoldiESicurezza(Base):
         self.assertEqual(Soldi(self.home / "manca.db").riepilogo()["movimenti"], 0)
 
 
+class TestCacheLLM(unittest.TestCase):
+    def llm(self, *risposte):
+        import io
+        from src.ada.llm import Claude
+        inviati = []
+
+        def apri(req, timeout):
+            inviati.append(json.loads(req.data))
+            r = risposte[min(len(inviati) - 1, len(risposte) - 1)]
+            if isinstance(r, Exception):
+                raise r
+            return io.BytesIO(json.dumps(r).encode())
+        return Claude(chiave="k", apri=apri), inviati
+
+    def test_system_e_ultimo_strumento_vanno_in_cache(self):
+        llm, inviati = self.llm({"content": []})
+        llm("sono il prompt", [{"role": "user", "content": "x"}], [{"name": "a"}, {"name": "b"}])
+        corpo = inviati[0]
+        self.assertEqual(corpo["system"][0]["cache_control"], {"type": "ephemeral"})
+        self.assertNotIn("cache_control", corpo["tools"][0])
+        self.assertEqual(corpo["tools"][1]["cache_control"], {"type": "ephemeral"})
+
+    def test_se_l_api_rifiuta_la_cache_si_riprova_senza(self):
+        import urllib.error
+        errore = urllib.error.HTTPError("u", 400, "x", {}, __import__("io").BytesIO(b'{"error":"cache_control not supported"}'))
+        llm, inviati = self.llm(errore, {"content": [{"type": "text", "text": "ok"}]})
+        r = llm("p", [{"role": "user", "content": "x"}], [{"name": "a"}])
+        self.assertEqual(r["content"][0]["text"], "ok")
+        self.assertEqual(len(inviati), 2)
+        self.assertEqual(inviati[1]["system"], "p")
+        self.assertFalse(llm.cache)
+
+
 class TestServer(Base):
     def avvia(self, token=""):
         ctx = costruisci(llm=FinteRisposte(testo("Ciao, sono Ada.")), home=self.home,

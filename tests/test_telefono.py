@@ -309,6 +309,11 @@ class TestServerAcquisti(Base):
         self.assertEqual(post("/api/approvazioni/1", {"esito": "approva", "opzione": 1})[1]["stato"], "scelta")
         stato = json.load(urllib.request.urlopen(base + "/api/stato"))
         self.assertEqual(stato["approvazioni"][0]["stato"], "scelta")
+        post("/api/telefono", {"fermo": True})
+        codice, j = post("/api/telefono/collega", {})
+        self.assertEqual(codice, 400)
+        self.assertIn("Riattiva", j["errore"])  # fermo: il messaggio dice come ripartire
+        post("/api/telefono", {"fermo": False})
         self.assertEqual(post("/api/telefono/collega", {"porta": "abc"})[0], 400)
         self.assertEqual(post("/api/telefono/collega", {"porta": 80})[0], 400)
         self.assertEqual(post("/api/telefono/collega", {"porta": 41937})[1]["messaggio"], "Telefono collegato.")

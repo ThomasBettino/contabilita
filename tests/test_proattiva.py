@@ -64,7 +64,7 @@ class TestPianificatore(Base):
     def test_limite_di_consumo_ferma_le_routine_ma_non_la_chat(self):
         c = self.ctx(FinteRisposte(testo("ok chat")))
         with mock.patch.object(cervello, "LIMITE_TOKEN", 100):
-            c.db.esegui("INSERT INTO consumi VALUES (?,?,?,?)", (time.strftime("%Y-%m-%d"), 90, 20, 1))
+            c.db.esegui("INSERT INTO consumi VALUES (?,?,?,?)", ("auto:" + time.strftime("%Y-%m-%d"), 90, 20, 1))
             rid = c.db.uno("SELECT id FROM routine WHERE nome='riepilogo_sera'")["id"]
             self.assertIn("limite di consumo", c.pian.esegui(rid))
             self.assertEqual(c.ada.llm.chiamate, [])
@@ -175,6 +175,25 @@ class TestRoutineDiAda(Base):
     def test_solo_ada_gestisce_routine(self):
         c = self.ctx()
         self.assertEqual(c.ada._esegui("acquisti", "gestisci_routine", {"azione": "crea", "nome": "x"}), "Strumento non consentito.")
+
+
+class TestConsumi(Base):
+    def test_la_chat_non_consuma_il_tetto_delle_routine(self):
+        with mock.patch.object(cervello, "LIMITE_TOKEN", 1000):
+            c = self.ctx(FinteRisposte(con_uso(testo("a"), 4000, 500), con_uso(testo("b"), 300, 50)))
+            c.ada.chiacchiera("ciao")
+            co = c.ada.consumo_oggi()
+            self.assertEqual((co["totale"], co["automatici"]), (4500, 0))
+            self.assertFalse(c.ada.sopra_limite())
+            c.ada.lavoro_proattivo("fai un riepilogo breve per favore", "prova")
+            co = c.ada.consumo_oggi()
+            self.assertEqual((co["totale"], co["automatici"]), (4850, 350))
+
+    def test_la_cache_pesa_un_decimo(self):
+        c = self.ctx(FinteRisposte({**testo("ok"), "usage": {"input_tokens": 100, "cache_creation_input_tokens": 200,
+                                                                "cache_read_input_tokens": 5000, "output_tokens": 50}}))
+        c.ada.chiacchiera("ciao")
+        self.assertEqual(c.ada.consumo_oggi()["totale"], 100 + 200 + 500 + 50)
 
 
 class TestNotificheEConsumi(Base):

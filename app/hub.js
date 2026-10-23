@@ -62,7 +62,24 @@ document.querySelectorAll("[data-vai]").forEach((b) => b.addEventListener("click
 
 /* ---------- chat ---------- */
 function scorriChat() { const m = $("msgs"); m.scrollTop = m.scrollHeight; }
-function bolla(ruolo, testo, extra) { return h("div", { class: "msg " + ruolo + (extra ? " " + extra : "") }, testo); }
+/* Grassetto (**testo**) ed elenchi (- voce), costruiti come elementi: niente HTML dal testo. */
+function testoRicco(testo) {
+  const frag = document.createDocumentFragment();
+  const righe = String(testo).split("\n");
+  righe.forEach((riga, i) => {
+    const m = riga.match(/^\s*[-*]\s+(.*)$/);
+    if (m) frag.append("• ");
+    (m ? m[1] : riga).split(/(\*\*[^*]+\*\*)/).forEach((parte) => {
+      if (/^\*\*[^*]+\*\*$/.test(parte)) frag.append(h("strong", null, parte.slice(2, -2)));
+      else if (parte) frag.append(parte);
+    });
+    if (i < righe.length - 1) frag.append("\n");
+  });
+  return frag;
+}
+function bolla(ruolo, testo, extra) {
+  return h("div", { class: "msg " + ruolo + (extra ? " " + extra : "") }, ruolo === "ada" && !extra ? testoRicco(testo) : testo);
+}
 
 async function caricaChat() {
   const { messaggi } = await api("/api/chat");
@@ -84,7 +101,7 @@ async function manda(testo) {
   $("orb").classList.add("pensa");
   try {
     const { risposta } = await api("/api/chat", { messaggio: testo });
-    pensa.className = "msg ada"; pensa.textContent = risposta;
+    pensa.className = "msg ada"; pensa.replaceChildren(testoRicco(risposta));
   } catch (e) {
     pensa.className = "msg ada"; pensa.textContent = "Non riesco a rispondere: " + e.message;
   } finally {
@@ -110,10 +127,10 @@ function disegna(s) {
     : "Tutto sotto controllo" + ((s.telefono || {}).collegato ? "" : " · schermo non collegato");
   const tel = s.telefono || {};
   const stop = $("btn-stop");
-  stop.hidden = !tel.collegato;
-  $("btn-collega").hidden = !!tel.collegato;
+  stop.hidden = !(tel.collegato || tel.fermo);  // fermo ma scollegato: il tasto per riattivare deve restare
+  $("btn-collega").hidden = !!tel.collegato || !!tel.fermo;
   stop.className = "stop" + (tel.fermo ? " riattiva" : "");
-  stop.textContent = tel.fermo ? "▶" : "⏹";
+  stop.textContent = tel.fermo ? "▶ Riattiva" : "⏹";
   stop.title = stop.ariaLabel = tel.fermo ? "Riattiva il telefono" : "Ferma subito il telefono";
   const n = s.approvazioni.length;
   $("badge-appr").hidden = $("pill-appr").hidden = !n;
@@ -207,7 +224,7 @@ const quandoRoutine = (r) => r.ora ? `ogni giorno alle ${r.ora}`
 
 function disegnaRoutine(routine, c) {
   const fmt = (n) => new Intl.NumberFormat("it-IT").format(n);
-  $("consumo").textContent = c ? `Consumo di oggi: ${fmt(c.totale)} di ${fmt(c.limite)} token per i lavori automatici (${c.chiamate} chiamate).` : "";
+  $("consumo").textContent = c ? `Consumo di oggi: ${fmt(c.totale)} token in tutto (${c.chiamate} chiamate). Lavori automatici: ${fmt(c.automatici)} su un tetto di ${fmt(c.limite)}; la tua chat non lo consuma.` : "";
   svuota($("routine"), routine.map((r) => {
     const esegui = async (e) => {
       e.target.disabled = true; toast("Ada ci sta lavorando…");

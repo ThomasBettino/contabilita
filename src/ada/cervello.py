@@ -117,19 +117,29 @@ class Ada:
                 self.log("sistema", "errore notifica", e)
 
     def _conta(self, risposta):
+        """Token pesati come costo: la parte letta dalla cache vale un decimo."""
         u = risposta.get("usage") or {}
-        self.db.esegui("INSERT INTO consumi (giorno, input, output, chiamate) VALUES (?,?,?,1) "
-                       "ON CONFLICT(giorno) DO UPDATE SET input=input+excluded.input, output=output+excluded.output, "
-                       "chiamate=chiamate+1", (time.strftime("%Y-%m-%d"), int(u.get("input_tokens") or 0),
-                                               int(u.get("output_tokens") or 0)))
+        inp = int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0) \
+            + int((u.get("cache_read_input_tokens") or 0) / 10)
+        out = int(u.get("output_tokens") or 0)
+        oggi = time.strftime("%Y-%m-%d")
+        for chiave in (oggi, "auto:" + oggi) if self.automatico else (oggi,):
+            self.db.esegui("INSERT INTO consumi (giorno, input, output, chiamate) VALUES (?,?,?,1) "
+                           "ON CONFLICT(giorno) DO UPDATE SET input=input+excluded.input, output=output+excluded.output, "
+                           "chiamate=chiamate+1", (chiave, inp, out))
+
+    def _consumo(self, chiave):
+        r = self.db.uno("SELECT input, output, chiamate FROM consumi WHERE giorno=?", (chiave,)) \
+            or {"input": 0, "output": 0, "chiamate": 0}
+        return {**r, "totale": r["input"] + r["output"]}
 
     def consumo_oggi(self):
-        r = self.db.uno("SELECT input, output, chiamate FROM consumi WHERE giorno=?", (time.strftime("%Y-%m-%d"),)) \
-            or {"input": 0, "output": 0, "chiamate": 0}
-        return {**r, "totale": r["input"] + r["output"], "limite": LIMITE_TOKEN}
+        oggi = time.strftime("%Y-%m-%d")
+        return {**self._consumo(oggi), "automatici": self._consumo("auto:" + oggi)["totale"], "limite": LIMITE_TOKEN}
 
     def sopra_limite(self):
-        return self.consumo_oggi()["totale"] >= LIMITE_TOKEN
+        """Il tetto riguarda solo i lavori automatici: la tua chat non lo consuma."""
+        return self.consumo_oggi()["automatici"] >= LIMITE_TOKEN
 
     def log(self, agente, azione, dettaglio=""):
         self.db.esegui("INSERT INTO attivita (ts, agente, azione, dettaglio) VALUES (?,?,?,?)",
@@ -416,7 +426,7 @@ class Ada:
 
     # ---------- conversazione ----------
     def _storia(self):
-        righe = self.db.tutti("SELECT ruolo, testo FROM chat ORDER BY id DESC LIMIT 20")[::-1]
+        righe = self.db.tutti("SELECT ruolo, testo FROM chat ORDER BY id DESC LIMIT 14")[::-1]
         msgs = []
         for r in righe:
             ruolo = "user" if r["ruolo"] == "utente" else "assistant"
@@ -507,7 +517,7 @@ class Ada:
         righe += [f"SEGNALAZIONI APERTE: {len(seg)}"] + [f"- #{s['id']} {s['agente']}: {s['problema']}" for s in seg]
         righe += ["ROUTINE:"] + [f"- {r['nome']} ({'attiva' if r['attiva'] else 'spenta'}), ultima: {r['esito'] or 'mai eseguita'}"
                                  for r in rou]
-        righe.append(f"CONSUMO OGGI: {c['totale']} token su {c['limite']}")
+        righe.append(f"CONSUMO OGGI: {c['totale']} token in totale, di cui {c['automatici']} nei lavori automatici (tetto {c['limite']})")
         return "\n".join(righe)
 
     def _routine(self, args):

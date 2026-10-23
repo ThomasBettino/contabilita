@@ -195,6 +195,8 @@ def crea_handler(ctx):
                         raise ValueError("Porta non valida.")
                 else:
                     porta = None
+                if ctx.ada.mano.fermo:
+                    raise ValueError("Lo schermo è fermato: tocca ▶ Riattiva in alto, poi Collega schermo.")
                 msg = ctx.ada.mano.collega(porta)
                 ctx.ada.log("utente", "collegamento telefono", msg[:120])
                 return {**ctx.ada.mano.stato(), "messaggio": msg}
