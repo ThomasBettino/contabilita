@@ -34,6 +34,25 @@ Quando vedi `Ada è pronta su http://127.0.0.1:8765` apri **Chrome** sul telefon
 
 Per lasciarla attiva in background: `nohup sh scripts/ada.sh > ~/ada.log 2>&1 &`
 
+## Se il telefono si spegne o si riavvia
+Il programma si ferma, ma **non perdi niente**: database, prompt, fatture e chiavi restano nei file di Termux. Per rilanciarla a mano, in Termux:
+```
+termux-wake-lock
+cd ~/contabilita
+nohup sh scripts/ada.sh > ~/ada.log 2>&1 &
+sleep 3
+cat ~/ada.log
+```
+**Avvio automatico dopo ogni riavvio (una volta sola):**
+1. Da **F-Droid** installa l'app **Termux:Boot** (la stessa fonte di Termux).
+2. In Termux: `cd ~/contabilita && git pull && sh scripts/installa-boot.sh`
+3. Apri **una volta** l'app Termux:Boot, e in Impostazioni, App, togli le restrizioni di batteria a **Termux** e **Termux:Boot**.
+4. Prova: riavvia il telefono, aspetta un minuto e apri Ada.
+
+La lettura delle notifiche di Revolut riparte da sola dopo il riavvio (è un lavoro persistente: controlla con `termux-job-scheduler --pending`). Il collegamento dello schermo no: va rifatto con **Collega schermo**.
+
+Tieni il telefono carico: sotto il 10% Android limita i servizi in background.
+
 ## Ada che lavora da sola
 Con l'hub acceso, Ada ha tre **routine** (le vedi in **Registro**, dove puoi spegnerle o lanciarle subito):
 - **Riepilogo della sera**, ogni giorno alle 21:00: spese, cose che aspettano te, miglioramenti. Lo trovi in chat e ricevi una notifica.
