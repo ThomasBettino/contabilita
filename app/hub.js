@@ -97,7 +97,7 @@ function disegna(s) {
     ? "Cervello non collegato"
     : s.approvazioni.length ? `${s.approvazioni.length} cose aspettano te`
     : s.segnalazioni_aperte ? `${s.segnalazioni_aperte} problemi da sistemare`
-    : "Tutto sotto controllo";
+    : "Tutto sotto controllo" + ((s.telefono || {}).collegato ? "" : " · schermo non collegato");
   const tel = s.telefono || {};
   const stop = $("btn-stop");
   stop.hidden = !tel.collegato;

@@ -36,19 +36,27 @@ export ADA_ADB_SERIALE=localhost:PORTA_PRINCIPALE
 ```
 (mettilo anche in `~/.ada.env`).
 
-## 4 bis. Usare solo i dati del telefono (5G)
-Il Debug wireless vuole un wifi, ma solo per questa configurazione. Quando `adb devices` mostra il telefono, fissa una porta che funziona anche senza wifi:
+## 4 bis. Porta fissa e wifi
+Appena sei collegato, fissa una porta stabile:
 ```
 adb tcpip 5555
 adb connect localhost:5555
 adb devices
 ```
-Poi **spegni il wifi** e rilancia `adb devices`: deve restare una riga con `device`. Se lo vede, da qui in avanti basta il 5G. Imposta anche:
+Deve comparire `localhost:5555   device`. Imposta anche, in `~/.ada.env`:
 ```
 export ADA_ADB_SERIALE=localhost:5555
 ```
-Se senza wifi il collegamento cade (dipende dal telefono), piano B: attiva l'**hotspot personale** del telefono prima di usare il Debug wireless, perché Android lo considera una rete wifi.
-Dopo ogni **riavvio** del telefono la modalità 5555 si perde: serve un wifi per pochi minuti e si ripetono questi comandi.
+
+**Limite scoperto sul Samsung:** il Debug wireless si spegne da solo quando il wifi non c'è, e con l'hotspot si spegne subito. Con wifi spento la porta 5555 risponde `Connection refused`. Quindi:
+- **Il controllo dello schermo funziona solo con un wifi acceso** (a casa, o un wifi qualsiasi, anche senza internet).
+- Chat, notifiche Revolut, spese e approvazioni funzionano benissimo col solo 5G.
+- Ogni volta che il wifi si spegne e si riaccende, la porta cambia: si ricollega in un comando leggendo la porta in Debug wireless:
+  ```
+  sh scripts/telefono.sh PORTA
+  ```
+- Dopo un riavvio del telefono si rifà lo stesso comando.
+- Se in futuro serve il controllo senza wifi, le strade sono Shizuku o un computer con cavo USB (`adb tcpip 5555` da USB resta aperto col 5G fino al riavvio).
 
 ## 5. Prova
 Avvia Ada come da `docs/AVVIO.md`. In alto compare il tasto **⏹** quando il telefono è collegato: toccalo per fermare tutto all'istante, toccalo di nuovo per riattivare.
