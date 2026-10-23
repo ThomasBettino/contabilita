@@ -14,8 +14,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const APP = 'https://claude.ai/artifact/QKUvJ2gwq8cVGTnkCukMnc';
-const REPARTI = { vendite: 'Vendite', contabilita: 'Contabilità', meteo: 'Meteo', stelle: 'Stelle', agenda: 'Agenda', ricerca: 'Ricerca', agente1: 'Agente 1' };
-const ORDINE = ['vendite', 'contabilita', 'meteo', 'stelle', 'agenda', 'ricerca'];
+const REPARTI = { vendite: 'Vendite', contabilita: 'Contabilità', meteo: 'Meteo', stelle: 'Stelle', agenda: 'Agenda', ricerca: 'Ricerca', telefono: 'Telefono', agente1: 'Agente 1' };
+const ORDINE = ['vendite', 'telefono', 'contabilita', 'meteo', 'stelle', 'agenda', 'ricerca'];
 const DA_FONTE = { Vendite: 'vendite', 'Andamento vendite': 'vendite', Stelle: 'stelle', Meteo: 'meteo', 'Contabilità': 'contabilita', Ricerca: 'ricerca' };
 
 function leggiCartella(dir) {

@@ -104,6 +104,35 @@ console.log('posta.js');
   prova('non ripete i messaggi già visti', leggi(path.join(W, 'out2/righe/contabilita-posta.json')).righe.length === 0);
 }
 
+console.log('telefono.js');
+{
+  const W = cartella();
+  prova('query solo delle email mandate da Thomas', /from:me/.test(esegui('telefono.js', ['query'])));
+  scrivi(path.join(W, 'vendite/trattative/t1.json'), { nome: 'Bianchi Mario', marca: 'Citroën', modello: 'C3', stato: 'aperto' });
+  scrivi(path.join(W, 'vendite/trattative/t2.json'), { nome: 'Alessandro', stato: 'aperto' });
+  const ora = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const mia = (id, oggetto, testo, min, da) => ({ id, threads: undefined, messages: [{ id, date: ora(min), sender: da || 'Io <io@example.com>', subject: oggetto, snippet: testo }] });
+  scrivi(path.join(W, 'thread.json'), { threads: [
+    mia('n1', '[Telefono] WhatsApp | Mario Bianchi | 10:01', 'Buongiorno, la C3 è ancora disponibile?', 50),
+    mia('n2', '[Telefono] Telefono | Chiamata persa | 10:05', 'Laura Verdi', 40),
+    mia('n3', '[Telefono] Banca | Codice di verifica | 10:06', 'Il tuo codice è 123456, non condividerlo', 39),
+    mia('n4', '[Telefono] WhatsApp | Alessandro | 10:07', 'Ci vediamo stasera?', 38),
+    mia('n5', '[Telefono] Gmail | Io | 10:08', '[Telefono] WhatsApp', 37),
+    mia('n6', '[Telefono] WhatsApp | Mario Bianchi | 10:09', 'Scrivimi tu', 36, 'Estraneo <altro@example.com>')
+  ] });
+  esegui('telefono.js', [path.join(W, 'thread.json'), path.join(W, 'agente'), path.join(W, 'vendite'), path.join(W, 'out'), 'io@example.com']);
+  const r = leggi(path.join(W, 'out/righe/telefono-notifiche.json'));
+  const s = leggi(path.join(W, 'out/sync/telefono.json'));
+  prova('racconta il cliente e la chiamata persa, non un nome solo', r.reparto === 'telefono' && r.righe.length === 2 && /Bianchi Mario \(preventivo Citroën C3 aperto\) ti ha scritto su WhatsApp/.test(r.righe[0]) && /chiamata persa da Laura Verdi/.test(r.righe[1]), r.righe);
+  prova('nasconde i codici, salta Gmail e le email di altri', s.collegato && s.ultime.length === 4 && /••••/.test(s.testo) && !/123456/.test(s.testo) && !s.ultime.some((n) => n.app === 'Gmail' || n.id === 'n6'), s);
+  fs.cpSync(path.join(W, 'out/sync'), path.join(W, 'agente/sync'), { recursive: true });
+  esegui('telefono.js', [path.join(W, 'thread.json'), path.join(W, 'agente'), path.join(W, 'vendite'), path.join(W, 'out2'), 'io@example.com']);
+  prova('non ripete le notifiche già viste', leggi(path.join(W, 'out2/righe/telefono-notifiche.json')).righe.length === 0 && leggi(path.join(W, 'out2/sync/telefono.json')).ultime.length === 4);
+  scrivi(path.join(W, 'vuoto.json'), { threads: [] });
+  esegui('telefono.js', [path.join(W, 'vuoto.json'), path.join(W, 'nessuno'), path.join(W, 'vendite'), path.join(W, 'out3'), 'io@example.com']);
+  prova('senza MacroDroid dice che il telefono non è collegato', leggi(path.join(W, 'out3/sync/telefono.json')).collegato === false);
+}
+
 console.log('controllo.js');
 {
   const W = cartella();

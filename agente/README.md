@@ -24,6 +24,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                      ├─ Reparto Contabilità: Conti (script Google), Posta (fatture arrivate per email)
                      ├─ Reparto Meteo: Verifiche (fino a 8 fonti meteo)
                      ├─ Reparto Stelle: Sentinella (stelle e assistenza di Un passo alla volta)
+                     ├─ Reparto Telefono: Notifiche (le notifiche del tuo Android, inoltrate da MacroDroid alla tua Gmail)
                      ├─ Compiti che dai ad Agente 1 (config/compiti)
                      └─ Rapporto di Agente 1: nell'app, per email e sul telefono (di notte in silenzio, al mattino tutto)
                     Sentinella stelle (attività programmata Claude, alle :37, 8–24)
@@ -52,6 +53,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 - `ponte/calendario.js` (addetto Calendario) prepara il piano per Google Calendar: crea, sposta o toglie gli eventi degli appuntamenti e dei test drive dell'app vendite, adotta quelli già presenti alla stessa ora con lo stesso nome e tiene la mappa in `calendario/<chiave>`. Tocca solo gli eventi della mappa.
 - `ponte/posta.js` (addetto Posta) trova nelle email degli ultimi 3 giorni le fatture arrivate (SdI tramite TeamSystem, commercialista, committenti), senza ricevute di acquisti e pubblicità, e non le ripete (`posta/<idMessaggio>`).
 - `ponte/controllo.js` (addetto Controllo) segnala solo le novità da sistemare nell'app vendite: appuntamenti e test drive passati non segnati, preventivi senza richiamo, clienti senza telefono, vendite senza margine, finanziamenti fermi o rifiutati.
+- `ponte/telefono.js` (addetto Notifiche) legge le notifiche del telefono che **MacroDroid** inoltra alla tua Gmail, con oggetto `[Telefono] <app> | <titolo> | <ora>` e il testo della notifica nel corpo. Conta solo le email mandate da te, nasconde i codici di verifica e salta Gmail e MacroDroid. Nel rapporto mette solo le chiamate perse e i messaggi dei clienti con una trattativa aperta, riconosciuti da nome e cognome. Il resto delle ultime 48 ore lo tiene per lo specialista Telefono (`sync/telefono`).
 - `ponte/rapporto.js` scrive il rapporto di Agente 1 ("Ho parlato con il Reparto Contabilità e mi ha detto che..."), l'email per te e il testo della notifica; di notte accumula e al primo turno del mattino racconta tutto.
 - `ponte/TURNO.md` è la procedura che il turno esegue ogni ora. Il pulsante Aggiorna, gli ordini e i compiti lo fanno partire subito.
 - `ricerca/RICERCA.md` è la procedura del **Reparto Ricerca**. Il Riparatore trova bug ed errori (turni falliti, script sbagliati, ordini bloccati, procedure confuse) e prepara la correzione con una prova che la dimostra. Lo Sviluppatore prepara migliorie e automazioni, il Revisore le controlla. Ogni proposta arriva nella pagina Squadra ("Proposte della Ricerca") e nel rapporto. **Niente entra senza il tuo sì**: premi "Sì, applica" o dillo ad Agente 1, e la Ricerca la applica in qualche minuto. Le novità arrivano anche nel briefing della sera.
@@ -73,6 +75,7 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 | `config/squadra` | Agenti creati da te e specialisti tolti dalla squadra | Pagina Squadra |
 | `config/ponte` | Id delle attività programmate del turno e della Ricerca, per il pulsante Aggiorna e il "Sì, applica" | Claude |
 | `ricerca/<id>` | Proposte della Ricerca: correzioni e migliorie con patch e prove, `da approvare` → `approvata`/`rifiutata` (solo tu) → `applicata` | Ricerca; la decisione la pagina Squadra o Agente 1 (`decidi_proposta`) |
+| `sync/telefono` | Ultime notifiche del telefono (48 ore, al massimo 30), già viste, conteggio per app | Turno |
 | `sync/ricerca` | Ultimo giro della Ricerca, addetti, applicate, errori aperti, idee | Ricerca |
 | `data/users/<tu>/chat`, `.../memoria` | Conversazione e cose da ricordare, private | Agente 1 |
 
