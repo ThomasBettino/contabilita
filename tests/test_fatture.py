@@ -296,5 +296,75 @@ class TestRoutineEServer(Base):
         self.assertFalse(json.load(urllib.request.urlopen(base + "/api/stato"))["fatture"]["configurato"])
 
 
+class TestImpostazioni(Base):
+    URL = "https://script.google.com/macros/s/ABC/exec"
+
+    def avvia(self, token, script):
+        c = costruisci(llm=FinteRisposte(), home=Path(self.tmp.name), movimenti=self.mov, token=token)
+        c.ada.archivio = Archivio(c.ada, ClienteScript("", ""), Config(url="", token=""))
+        c.nuovo_cliente = lambda url, tok: script
+        self.addCleanup(c.db.c.close)
+        srv = crea_server(c, "127.0.0.1", 0)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        self.addCleanup(srv.server_close)
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+        def post(path, dati, auth=None):
+            h = {"Content-Type": "application/json"}
+            if auth:
+                h["Authorization"] = "Bearer " + auth
+            req = urllib.request.Request(base + path, data=json.dumps(dati).encode(), headers=h)
+            try:
+                with urllib.request.urlopen(req) as r:
+                    return r.status, json.load(r)
+            except urllib.error.HTTPError as e:
+                return e.code, json.load(e)
+        return c, post
+
+    def test_senza_token_di_accesso_non_salva_nulla(self):
+        c, post = self.avvia("", FintoScript())
+        codice, j = post("/api/impostazioni/fatture", {"url": self.URL, "token": "x"})
+        self.assertEqual(codice, 403)
+        self.assertIn("ADA_TOKEN", j["errore"])
+        self.assertFalse((Path(self.tmp.name) / "segreti.json").exists())
+
+    def test_con_token_prova_salva_applica_e_resta_dopo_il_riavvio(self):
+        s = FintoScript([fattura("a", 808)])
+        c, post = self.avvia("abc", s)
+        codice, j = post("/api/impostazioni/fatture", {"url": self.URL, "token": "codice"}, auth="abc")
+        self.assertEqual((codice, j["totale"]), (200, 1))
+        self.assertTrue(c.ada.archivio.configurato)
+        f = Path(self.tmp.name) / "segreti.json"
+        self.assertEqual(oct(f.stat().st_mode & 0o777), "0o600")
+        c2 = costruisci(llm=FinteRisposte(), home=Path(self.tmp.name), movimenti=self.mov, token="abc")
+        self.addCleanup(c2.db.c.close)
+        self.assertEqual((c2.ada.archivio.cliente.url, c2.ada.archivio.cliente.token), (self.URL, "codice"))
+        self.assertTrue(c2.ada.archivio.configurato)
+
+    def test_indirizzo_non_google_o_codice_vuoto(self):
+        c, post = self.avvia("abc", FintoScript())
+        self.assertEqual(post("/api/impostazioni/fatture", {"url": "https://evil.example.com/x", "token": "t"}, auth="abc")[0], 400)
+        self.assertEqual(post("/api/impostazioni/fatture", {"url": self.URL, "token": ""}, auth="abc")[0], 400)
+        self.assertEqual(post("/api/impostazioni/fatture", {"url": self.URL, "token": "t"})[0], 401)  # senza il token di Ada
+        self.assertFalse((Path(self.tmp.name) / "segreti.json").exists())
+
+    def test_script_che_rifiuta_non_viene_salvato(self):
+        s = FintoScript()
+        s.guasto = True
+        c, post = self.avvia("abc", s)
+        codice, j = post("/api/impostazioni/fatture", {"url": self.URL, "token": "sbagliato"}, auth="abc")
+        self.assertEqual(codice, 400)
+        self.assertIn("non ha accettato", j["errore"])
+        self.assertFalse((Path(self.tmp.name) / "segreti.json").exists())
+        self.assertFalse(c.ada.archivio.configurato)
+
+    def test_stato_dice_se_il_token_c_e(self):
+        c, post = self.avvia("abc", FintoScript())
+        self.assertTrue(c.fatture_stato()["token_attivo"])
+        c.token = ""
+        self.assertFalse(c.fatture_stato()["token_attivo"])
+
+
 if __name__ == "__main__":
     unittest.main()

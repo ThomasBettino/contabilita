@@ -85,10 +85,17 @@
     </div>
     <div id="soldi-fatture" class="blocco" hidden>
       <p class="nota" id="fatt-nota"></p>
+      <form id="form-fatture" class="feedback" hidden autocomplete="off">
+        <input id="fatt-url" type="url" placeholder="Indirizzo dello script (https://script.google.com/…)" aria-label="Indirizzo dello script">
+        <input id="fatt-token" type="password" placeholder="Codice segreto" aria-label="Codice segreto" autocomplete="off">
+        <button class="primario" type="submit">Collega l'archivio</button>
+      </form>
       <div class="tessere" id="fatt-tessere"></div>
       <div class="riga-azioni"><button class="secondario" id="btn-sync-fatture" type="button">Sincronizza ora</button></div>
-      <h3>Archivio fatture</h3>
-      <div class="lista" id="fatt-lista"></div>
+      <div id="fatt-archivio" class="blocco" hidden>
+        <h3>Archivio fatture</h3>
+        <div class="lista" id="fatt-lista"></div>
+      </div>
     </div>
   </section>
 </main>

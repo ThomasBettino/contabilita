@@ -17,7 +17,8 @@ from pathlib import Path
 from .agenti import AGENTI, Squadra
 from .cervello import Ada
 from .db import DB, casa
-from .fatture import Archivio, ClienteScript, Config, ErroreFatture
+from .fatture import HOST_SCRIPT, Archivio, ClienteScript, Config, ErroreFatture
+from .segreti import Segreti
 from .llm import Claude
 from .notifica import Notifica
 from .pianificatore import Pianificatore
@@ -31,15 +32,15 @@ CSP = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 's
 
 
 class Contesto:
-    def __init__(self, ada, db, squadra, soldi, token="", web=WEB, pian=None):
+    def __init__(self, ada, db, squadra, soldi, token="", web=WEB, pian=None, segreti=None):
         self.ada, self.db, self.squadra, self.soldi, self.token, self.web = ada, db, squadra, soldi, token, web
-        self.pian = pian
+        self.pian, self.segreti, self.nuovo_cliente = pian, segreti, ClienteScript
 
     def fatture_stato(self):
         a = self.ada.archivio
         if not a or not a.configurato:
-            return {"configurato": False, "riepilogo": None, "elenco": []}
-        return {"configurato": True, "riepilogo": a.riepilogo(), "elenco": a.elenco()}
+            return {"configurato": False, "riepilogo": None, "elenco": [], "token_attivo": bool(self.token)}
+        return {"configurato": True, "riepilogo": a.riepilogo(), "elenco": a.elenco(), "token_attivo": bool(self.token)}
 
     def stato(self):
         ora = int(time.time())
@@ -128,6 +129,8 @@ def crea_handler(ctx):
                 self._invia(200, self._rotta(metodo, path, corpo))
             except LookupError as e:
                 self._invia(404, {"errore": str(e)})
+            except PermissionError as e:
+                self._invia(403, {"errore": str(e)})
             except (ValueError, KeyError, TypeError) as e:
                 self._invia(400, {"errore": str(e)})
             except Exception as e:
@@ -141,6 +144,21 @@ def crea_handler(ctx):
                 return {"messaggi": ctx.db.tutti("SELECT ts, ruolo, testo FROM chat ORDER BY id DESC LIMIT 50")[::-1]}
             if metodo == "POST" and path == "/api/chat":
                 return {"risposta": ctx.ada.chiacchiera(corpo.get("messaggio", ""))}
+            if path == "/api/impostazioni/fatture" and metodo == "POST":
+                if not ctx.token:  # senza token qualunque app del telefono potrebbe leggere o cambiare i codici
+                    raise PermissionError("Per salvare i codici nell'app serve prima un token di accesso (ADA_TOKEN): vedi docs/FATTURE.md.")
+                url, tok = str(corpo.get("url", "")).strip(), str(corpo.get("token", "")).strip()
+                if not url.startswith(HOST_SCRIPT) or not tok:
+                    raise ValueError("L'indirizzo deve iniziare con https://script.google.com/ e il codice non può essere vuoto.")
+                cliente = ctx.nuovo_cliente(url, tok)
+                try:
+                    cliente.chiama(action="list")  # si prova prima di salvare
+                except ErroreFatture as e:
+                    raise ValueError(f"Lo script non ha accettato indirizzo o codice ({e}).")
+                ctx.segreti.scrivi(fatture_url=url, fatture_token=tok)
+                ctx.ada.archivio.imposta(url, tok, cliente)
+                ctx.ada.log("utente", "archivio fatture collegato")
+                return ctx.ada.archivio.sincronizza()
             if path == "/api/fatture/sincronizza" and metodo == "POST":
                 a = ctx.ada.archivio
                 if not a or not a.configurato:
@@ -236,12 +254,15 @@ def costruisci(llm=None, home=None, movimenti=None, token=None):
     db, squadra = DB(home / "ada.db"), Squadra(home)
     soldi = Soldi(movimenti or os.environ.get("ADA_MOVIMENTI") or Path.home() / "movimenti.db")
     ada = Ada(db, squadra, soldi, llm or Claude())
+    segreti = Segreti(home / "segreti.json")
     cfg = Config()
+    salvati = segreti.leggi()
+    cfg.url, cfg.token = salvati.get("fatture_url") or cfg.url, salvati.get("fatture_token") or cfg.token
     ada.archivio = Archivio(ada, ClienteScript(cfg.url, cfg.token), cfg)
     ada.mano = Mano(Adb(seriale=os.environ.get("ADA_ADB_SERIALE") or None),
                     autorizzato=ada.autorizzazione_attiva, log=ada.log)
     return Contesto(ada, db, squadra, soldi, os.environ.get("ADA_TOKEN", "") if token is None else token,
-                    pian=Pianificatore(ada))
+                    pian=Pianificatore(ada), segreti=segreti)
 
 
 def main():

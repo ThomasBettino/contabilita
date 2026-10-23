@@ -99,6 +99,14 @@ class Archivio:
         return self.cliente.configurato
 
     # ---------- dati ----------
+    def imposta(self, url, token, cliente=None):
+        """Applica subito indirizzo e codice nuovi, senza riavviare (con il collegamento già verificato)."""
+        self.cfg.url, self.cfg.token = url, token
+        if cliente is not None:
+            self.cliente = cliente
+        else:
+            self.cliente.url, self.cliente.token = url, token
+
     def _kv(self, chiave, default=None):
         r = self.db.uno("SELECT valore FROM kv WHERE chiave=?", (chiave,))
         return json.loads(r["valore"]) if r else default

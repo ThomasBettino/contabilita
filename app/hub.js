@@ -20,15 +20,25 @@ const svuota = (el, ...nuovi) => el.replaceChildren(...nuovi.flat());
 function leggiToken() { try { return localStorage.getItem("ada_token") || ""; } catch (e) { return ""; } }
 function salvaToken(t) { try { localStorage.setItem("ada_token", t); } catch (e) { /* storage bloccato */ } }
 
+let richiestaToken = null;
+function chiediToken() {  // più chiamate insieme fanno una sola domanda
+  richiestaToken ||= Promise.resolve().then(() => {
+    const t = prompt("Inserisci il token di accesso di Ada");
+    richiestaToken = null;
+    if (t) salvaToken(t.trim());
+    return t ? t.trim() : "";
+  });
+  return richiestaToken;
+}
+
 async function api(path, dati) {
-  const intest = { Authorization: "Bearer " + leggiToken() };
-  const opz = { headers: intest };
+  const opz = { headers: { Authorization: "Bearer " + leggiToken() } };
   if (dati !== undefined) { opz.method = "POST"; opz.headers["Content-Type"] = "application/json"; opz.body = JSON.stringify(dati); }
   let r = await fetch(path, opz);
   if (r.status === 401) {
-    const t = prompt("Inserisci il token di accesso di Ada");
+    const t = await chiediToken();
     if (!t) throw new Error("Accesso negato");
-    salvaToken(t); intest.Authorization = "Bearer " + t;
+    opz.headers.Authorization = "Bearer " + t;
     r = await fetch(path, opz);
   }
   const j = await r.json().catch(() => ({}));
@@ -131,8 +141,12 @@ const STATO_FATTURA = { inviata: "Mandata a Giulia", fatturata: "Fatturata · at
 const soloHttps = (u) => typeof u === "string" && /^https:\/\//.test(u);
 
 function disegnaFatture(f) {
+  $("form-fatture").hidden = !!f.configurato || !f.token_attivo;
+  $("fatt-archivio").hidden = !f.configurato;
   if (!f.configurato) {
-    $("fatt-nota").textContent = "Archivio non collegato. Serve l'indirizzo e il codice dello script Google: vedi docs/FATTURE.md.";
+    $("fatt-nota").textContent = f.token_attivo
+      ? "Archivio non collegato. Incolla qui sotto l'indirizzo e il codice segreto dello script Google (in Contabilità Smart: Avvisi, Impostazioni)."
+      : "Per collegare l'archivio dall'app serve prima un token di accesso: vedi docs/FATTURE.md.";
     svuota($("fatt-tessere")); svuota($("fatt-lista")); $("btn-sync-fatture").hidden = true;
     return;
   }
@@ -162,6 +176,19 @@ function disegnaFatture(f) {
       h("div", { class: "azioni" }, h("button", { class: "secondario", type: "button", onclick: alterna }, incassata ? "Annulla incasso" : "Segna incassata")));
   }) : h("div", { class: "vuoto" }, "L'archivio è vuoto: le fatture arrivano da sole quando mandi la mail a Giulia."));
 }
+
+$("form-fatture").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const url = $("fatt-url").value.trim(), token = $("fatt-token").value.trim();
+  if (!url || !token) return;
+  const btn = e.target.querySelector("button"); btn.disabled = true; toast("Provo il collegamento…");
+  try {
+    const j = await api("/api/impostazioni/fatture", { url, token });
+    $("fatt-token").value = ""; $("fatt-url").value = "";
+    toast(`Collegato: ${j.totale} fatture nell'archivio`); aggiorna();
+  } catch (err) { toast(err.message); }
+  finally { btn.disabled = false; }
+});
 
 $("seg-soldi").addEventListener("click", (e) => {
   const v = e.target.dataset?.s; if (!v) return;
