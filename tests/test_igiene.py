@@ -3,7 +3,6 @@ import unittest
 import urllib.request
 
 from src.ada.fatture import ClienteScript
-from src.ada.github import ClienteGitHub
 from src.ada.llm import Claude
 
 
@@ -14,10 +13,8 @@ class TestIgiene(unittest.TestCase):
 
     def test_i_collegamenti_di_default_non_escono_su_internet(self):
         with self.assertRaises(AssertionError) as e:
-            ClienteGitHub("proprietario/app", "token").crea_issue("t", "c")
-        self.assertIn("rete vera", str(e.exception))
-        with self.assertRaises(AssertionError):
             Claude(chiave="k")("p", [{"role": "user", "content": "x"}])
+        self.assertIn("rete vera", str(e.exception))
         with self.assertRaises(AssertionError):
             ClienteScript("https://script.google.com/macros/s/X/exec", "t").chiama(action="list")
 

@@ -45,10 +45,6 @@ class DB:
         self.c.row_factory = sqlite3.Row
         self.lock = threading.Lock()
         self.c.executescript(SCHEMA)
-        for colonna, tipo in (("issue_numero", "INTEGER"), ("issue_url", "TEXT")):  # database creati prima di GitHub
-            if colonna not in [r[1] for r in self.c.execute("PRAGMA table_info(idee)")]:
-                self.c.execute(f"ALTER TABLE idee ADD COLUMN {colonna} {tipo}")
-        self.c.commit()
 
     def esegui(self, sql, args=()):
         with self.lock:

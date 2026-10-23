@@ -19,7 +19,6 @@ from .cervello import Ada, strumenti_di
 from .db import DB, casa
 from . import aggiornamento
 from .fatture import HOST_SCRIPT, Archivio, ClienteScript, Config, ErroreFatture
-from .github import REPO as REPO_VALIDO, ClienteGitHub, ErroreGitHub
 from .segreti import Segreti
 from .llm import Claude
 from .notifica import Notifica
@@ -38,19 +37,15 @@ class Contesto:
         self.ada, self.db, self.squadra, self.soldi, self.token, self.web = ada, db, squadra, soldi, token, web
         self.pian, self.segreti, self.nuovo_cliente = pian, segreti, ClienteScript
         # punti di aggancio sostituibili nei test
-        self.nuovo_github, self.fn_aggiorna, self.fn_riavvia = ClienteGitHub, aggiornamento.aggiorna, aggiornamento.riavvia_tra
+        self.fn_aggiorna, self.fn_riavvia = aggiornamento.aggiorna, aggiornamento.riavvia_tra
         self._versione = None
 
     def versione(self):
         self._versione = self._versione or aggiornamento.versione()
         return self._versione
 
-    def github_stato(self):
-        g = self.ada.github
-        return {"configurato": bool(g and g.configurato), "repo": g.repo if g else "", "token_attivo": bool(self.token)}
-
     def idee_stato(self):
-        out = self.db.tutti("SELECT id, ts, titolo, descrizione, motivo, stato, issue_numero, issue_url FROM idee ORDER BY id DESC LIMIT 15")
+        out = self.db.tutti("SELECT id, ts, titolo, descrizione, motivo, stato FROM idee ORDER BY id DESC LIMIT 15")
         for i in out:
             i["brief"] = brief_idea(i)
         return out
@@ -90,7 +85,7 @@ class Contesto:
             "routine": self.pian.elenco() if self.pian else [],
             "fatture": self.fatture_stato(),
             "idee": self.idee_stato(),
-            "github": self.github_stato(),
+            "token_attivo": bool(self.token),
             "versione": self.versione(),
             "consumo": self.ada.consumo_oggi(),
         }
@@ -209,27 +204,9 @@ def crea_handler(ctx):
                 except ErroreFatture as e:
                     raise ValueError(f"Script non raggiungibile: {e}")
                 return {"messaggio": msg}
-            if path == "/api/impostazioni/github" and metodo == "POST":
-                if not ctx.token:
-                    raise PermissionError("Per salvare il collegamento serve prima un token di accesso (ADA_TOKEN): vedi docs/GITHUB.md.")
-                repo, tok = str(corpo.get("repo", "")).strip(), str(corpo.get("token", "")).strip()
-                if not REPO_VALIDO.fullmatch(repo) or not tok:
-                    raise ValueError("Il repository va scritto come proprietario/nome e il codice non può essere vuoto.")
-                cliente = ctx.nuovo_github(repo, tok)
-                try:
-                    info = cliente.verifica()  # si prova prima di salvare
-                except ErroreGitHub as e:
-                    raise ValueError(f"GitHub non ha accettato repository o codice ({e}).")
-                ctx.segreti.scrivi(github_repo=repo, github_token=tok)
-                ctx.ada.github = cliente
-                ctx.ada.log("utente", "GitHub collegato", repo)
-                return {**info, "repo": repo}
-            m = re.fullmatch(r"/api/idee/(\d+)/pubblica", path)
-            if metodo == "POST" and m:
-                return {"messaggio": ctx.ada.pubblica_idea(int(m.group(1)))}
             if path == "/api/aggiorna" and metodo == "POST":
                 if not ctx.token:  # cambia il programma che gira sul telefono: mai senza token
-                    raise PermissionError("Per aggiornare dall'app serve prima un token di accesso (ADA_TOKEN): vedi docs/GITHUB.md.")
+                    raise PermissionError("Per aggiornare dall'app serve prima un token di accesso (ADA_TOKEN): vedi docs/AVVIO.md.")
                 r = ctx.fn_aggiorna()
                 ctx.ada.log("utente", "aggiornamento", r["messaggio"][:140])
                 if r["cambiato"]:
@@ -326,8 +303,6 @@ def costruisci(llm=None, home=None, movimenti=None, token=None):
     cfg = Config()
     salvati = segreti.leggi()
     cfg.url, cfg.token = salvati.get("fatture_url") or cfg.url, salvati.get("fatture_token") or cfg.token
-    ada.github = ClienteGitHub(salvati.get("github_repo") or os.environ.get("ADA_GITHUB_REPO", "thomasbettino/contabilita"),
-                               salvati.get("github_token") or os.environ.get("ADA_GITHUB_TOKEN", ""))
     ada.archivio = Archivio(ada, ClienteScript(cfg.url, cfg.token), cfg)
     ada.mano = Mano(Adb(seriale=os.environ.get("ADA_ADB_SERIALE") or None),
                     autorizzato=ada.autorizzazione_attiva, log=ada.log)

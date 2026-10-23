@@ -19,19 +19,7 @@ Il bonifico atteso si calcola come nella tua app: imponibile + bollo (2 € sopr
 
 **Percorso semplice: dentro Ada, senza scrivere comandi.**
 
-*Passo 1, token di accesso (una volta).* Serve perché qualunque app del telefono può raggiungere Ada su `localhost`: senza un token, Ada si rifiuta di salvare codici. In Termux:
-```
-echo "export ADA_TOKEN=$(head -c 18 /dev/urandom | base64 | tr -d '/+=')" >> ~/.ada.env
-pkill -f src.ada.server
-cd ~/contabilita
-git pull
-nohup sh scripts/ada.sh > ~/ada.log 2>&1 &
-```
-Poi copia il token negli appunti, senza vederlo:
-```
-grep -o 'ADA_TOKEN=.*' ~/.ada.env | cut -d= -f2 | termux-clipboard-set
-```
-Apri Ada in Chrome: chiede il **token di accesso**, incollalo. Il browser lo ricorda. Il token non va mai condiviso, nemmeno con me.
+*Passo 1, token di accesso (una volta).* Senza un token Ada si rifiuta di salvare codici: la procedura è in `docs/AVVIO.md`, sezione *Token di accesso*.
 
 *Passo 2, collegare l'archivio.* Nell'app **Contabilità Smart**, **Avvisi**, **Impostazioni**: copia l'indirizzo dello script (inizia con `https://script.google.com/`) e il codice segreto. In Ada: **Soldi**, **Fatture P.IVA**, incolla i due valori e tocca **Collega l'archivio**.
 

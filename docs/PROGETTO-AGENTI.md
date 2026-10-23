@@ -25,7 +25,7 @@ Decisioni:
 
 - **Miglioria quotidiana (costruito):** routine alle 6:30. Ada applica da sola le migliorie nel perimetro sicuro (prompt, routine, regole di categoria) e propone al massimo una funzione nuova al giorno che richiede codice, con il tuo ok. Il mandato «decidi e agisci, non chiedere quale opzione scegliere» è fissato nel codice (`MANDATO` in `src/ada/cervello.py`). Ada non modifica il proprio codice: i confini di sicurezza sono lì.
 
-- **Sviluppo automatico delle idee (costruito, da attivare):** idea approvata → problema su GitHub (`src/ada/github.py`) → azione Claude (`.github/workflows/claude.yml`) → modifica rivista e unita da una persona → *Aggiorna Ada* (`src/ada/aggiornamento.py`) con test e ritorno automatico. Vedi `docs/GITHUB.md`.
+- **Aggiornamento con un tocco (costruito):** *Aggiorna Ada* (`src/ada/aggiornamento.py`) scarica la versione nuova, la collauda con i test e, se falliscono, torna da sola alla versione di prima. Lo sviluppo delle idee resta manuale (testo da copiare). Un collegamento automatico con GitHub è stato scartato.
 
 Dove questa sezione contraddice quelle sotto, vale questa.
 

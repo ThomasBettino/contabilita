@@ -174,14 +174,13 @@ textarea { width: 100%; background: var(--bg); border: 1px solid var(--linea); b
 }
 
 /* ---------- fatture ---------- */
-#form-fatture input, #form-github input { background: var(--bg); border: 1px solid var(--linea); border-radius: 12px; padding: 12px 14px; outline: none; width: 100%; }
-#form-fatture input:focus, #form-github input:focus { border-color: var(--cy); box-shadow: 0 0 0 3px rgba(67,229,255,.15); }
-#form-github[hidden], #form-fatture[hidden] { display: none; }
+#form-fatture input { background: var(--bg); border: 1px solid var(--linea); border-radius: 12px; padding: 12px 14px; outline: none; width: 100%; }
+#form-fatture input:focus { border-color: var(--cy); box-shadow: 0 0 0 3px rgba(67,229,255,.15); }
+#form-fatture[hidden] { display: none; }
 .segmento { display: flex; gap: 4px; background: var(--pannello); border: 1px solid var(--linea); border-radius: 999px; padding: 4px; align-self: flex-start; }
 .segmento button { padding: 7px 16px; border-radius: 999px; color: var(--tenue); font-size: 14px; font-weight: 600; }
 .segmento button.on { background: linear-gradient(135deg, rgba(67,229,255,.25), rgba(155,123,255,.3)); color: var(--testo); }
 .azioni.ripiega { flex-wrap: wrap; }
-.collegamento { text-decoration: none; display: inline-flex; align-items: center; color: var(--cy); }
 .blocco { display: flex; flex-direction: column; gap: 12px; }
 .blocco[hidden] { display: none; }
 .voce a { color: var(--cy); text-decoration: none; font-size: 13.5px; font-weight: 600; margin-right: 12px; }

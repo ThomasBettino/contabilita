@@ -62,7 +62,7 @@ Con l'hub acceso, Ada ha tre **routine** (le vedi in **Registro**, dove puoi spe
 **Ogni giorno una miglioria (alle 6:30).** Ada guarda cosa è successo (attività, errori, segnalazioni, spese rimaste senza categoria) e sceglie la miglioria più utile e a basso rischio.
 - **Cose che fa da sola, subito:** correggere i prompt dei suoi assistenti, creare o cambiare routine, insegnare regole di categoria alle spese (per esempio "Anthropic" va in Abbonamenti), chiudere segnalazioni. Tutto compare in **Registro** e si può annullare.
 - **Funzioni nuove che richiedono codice:** le **propone**, una al giorno al massimo. La proposta arriva in **Approva** con una notifica. Se approvi, compare in **Registro, Idee di Ada** con un tasto che copia il testo pronto da dare a chi sviluppa; quando è realizzata la segni come **Fatta**.
-- **Sviluppo:** se collegato GitHub (`docs/GITHUB.md`), l'idea approvata parte da sola allo sviluppo e tu approvi la modifica su GitHub; poi **Aggiorna Ada** in Registro la porta sul telefono, con i test e il ritorno automatico alla versione di prima se falliscono.
+- **Realizzazione:** le idee approvate non partono da sole. Con **Copia il testo per lo sviluppo** prepari un testo completo, con i vincoli di sicurezza già dentro, da dare a chi sviluppa. Quando la funzione è pronta la segni **Fatta**.
 - **Cosa non fa mai:** modificare il proprio codice o i confini di sicurezza (soldi, tasto finale, schermo).
 
 Ada può anche creare altre routine da sola (massimo 8, ogni 30 minuti al minimo, mai con lo schermo del telefono).
@@ -75,10 +75,27 @@ Ada può anche creare altre routine da sola (massimo 8, ogni 30 minuti al minimo
 
 Le routine girano solo mentre Ada è accesa (il processo in Termux). Se il telefono si riavvia, riavvia Ada con `scripts/ada.sh`.
 
+## Token di accesso (serve per salvare codici e per aggiornare)
+Qualunque app del telefono può raggiungere Ada su `localhost`. Per questo Ada **rifiuta** di salvare codici (script fatture) e di aggiornarsi finché non imposti un token di accesso. In Termux, una volta:
+```
+echo "export ADA_TOKEN=$(head -c 18 /dev/urandom | base64 | tr -d '/+=')" >> ~/.ada.env
+pkill -f src.ada.server
+cd ~/contabilita
+nohup sh scripts/ada.sh > ~/ada.log 2>&1 &
+```
+Poi copialo negli appunti, senza vederlo, e incollalo quando Ada lo chiede in Chrome (il browser lo ricorda):
+```
+grep -o 'ADA_TOKEN=.*' ~/.ada.env | cut -d= -f2 | termux-clipboard-set
+```
+Il token non va condiviso con nessuno.
+
+## Aggiornare Ada con un tocco
+Quando ci sono versioni nuove del programma: **Registro, Aggiornamenti, Aggiorna Ada** (serve il token di accesso). Scarica la versione nuova con un avanzamento semplice (non sovrascrive niente), **fa girare i test** e riavvia Ada. Se i test **falliscono**, torna da sola alla versione di prima e te lo dice. Il ramo seguito è quello su cui si trova il telefono: per controllarlo, `git branch --show-current` in Termux.
+
 ## Sicurezza
 - Il server ascolta solo sul telefono (127.0.0.1): dall'esterno non è raggiungibile.
 - Se un giorno lo apri su rete (`ADA_HOST=0.0.0.0`) il sistema si rifiuta di partire senza `ADA_TOKEN`.
-- Database e prompt di Ada stanno in `~/ada`, i movimenti in `~/movimenti.db`: fuori dal repo, mai su GitHub.
+- Database e prompt di Ada stanno in `~/ada`, i movimenti in `~/movimenti.db`: fuori dal repo, mai nel repository.
 
 ## Cosa fa oggi e cosa no
 Funziona: chat con Ada, team di 7 assistenti (con Acquisti), delega, ciclo di miglioramento dei prompt, approvazioni, riepilogo spese dai movimenti Revolut.

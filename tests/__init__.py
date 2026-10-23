@@ -1,7 +1,7 @@
 """Igiene dei test: non possono usare la rete vera né le impostazioni (chiavi, token) del telefono.
 
 Succede PRIMA che i moduli di src vengano importati, così anche i collegamenti con `apri=urlopen`
-di default (Claude, GitHub, script Google) ricevono la versione protetta.
+di default (Claude, script Google) ricevono la versione protetta.
 Un test che prova a uscire su internet fallisce con un errore chiaro invece di agire per davvero.
 """
 import os
