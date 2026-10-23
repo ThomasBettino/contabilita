@@ -53,7 +53,7 @@ class TestRitmo(Base):
         self.assertEqual(c.pian.ritmo(), "normale")
         cad = self.cadenze(c)
         self.assertEqual((cad["collaudo"], cad["studio"], cad["lettura"], cad["miglioramento"]),
-                         ((120, 1), (360, 1), (240, 1), (180, 1)))
+                         ((180, 1), (420, 1), (240, 1), (180, 1)))
         self.assertEqual(c.ada.limite_token(), cervello.LIMITE_TOKEN * 2)
 
     def test_ogni_ritmo_cambia_cadenza_e_tetto(self):
@@ -69,6 +69,15 @@ class TestRitmo(Base):
         self.assertEqual(self.cadenze(c)["collaudo"], (240, 1))  # si riaccende
         with self.assertRaises(ValueError):
             c.pian.imposta_ritmo("velocissimo")
+
+    def test_dopo_un_aggiornamento_la_cadenza_si_riallinea_al_ritmo(self):
+        c = self.ctx()
+        c.db.esegui("UPDATE routine SET ogni_min=120 WHERE nome='collaudo'")  # valore di una versione precedente
+        c.db.esegui("UPDATE routine SET ogni_min=360, attiva=0 WHERE nome='studio'")
+        Pianificatore(c.ada)
+        cad = self.cadenze(c)
+        self.assertEqual(cad["collaudo"], (180, 1))
+        self.assertEqual(cad["studio"], (420, 0))  # la cadenza si allinea, ma non si riaccende ciò che è spento
 
     def test_non_riaccende_la_routine_di_sistema_che_l_utente_ha_spento(self):
         c = self.ctx()

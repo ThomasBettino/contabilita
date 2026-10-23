@@ -67,7 +67,7 @@ Con l'hub acceso, Ada ha delle **routine** (le vedi in **Registro**, dove puoi s
 |---|---|---|---|---|
 | Spento | no | no | no | 400.000 token |
 | Leggero | ogni 4 ore | ogni 12 ore | ogni 12 ore | 400.000 token |
-| **Normale** (predefinito) | ogni 2 ore | ogni 6 ore | ogni 4 ore | 800.000 token |
+| **Normale** (predefinito) | ogni 3 ore | ogni 7 ore | ogni 4 ore | 800.000 token |
 | Intenso | ogni 30 minuti | ogni 2 ore | ogni ora | 2.000.000 token (costa molto: l'app chiede conferma) |
 
 - **Collaudo.** Un «avatar» esigente e imprevedibile (il **Collaudatore**, un assistente che sa solo parlare, senza strumenti) si comporta come faresti tu: ha fretta, cambia idea, ti rimprovera, incolla testi con ordini nascosti, chiede cose impossibili. Fa un messaggio, poi insiste. Un revisore dà un voto da 1 a 10 e dice cosa non va; se il voto è 7 o meno, il problema diventa una **segnalazione** per Ada, che nel suo ciclo di miglioramento corregge i prompt. Le categorie girano a rotazione (soldi, dati inventati, promesse senza azioni, pressione, istruzioni nascoste, privacy…). Li vedi in **Registro, Collaudi**, con tutto il dialogo.

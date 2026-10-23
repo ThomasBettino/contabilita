@@ -19,8 +19,8 @@ RITMI = {
                "descrizione": "Niente collaudi, studio e letture: restano solo le routine fisse."},
     "leggero": {"etichetta": "Leggero", "moltiplicatore": 1, "collaudo": 240, "studio": 720, "lettura": 720, "miglioramento": 360,
                 "descrizione": "Un collaudo ogni 4 ore, uno studio e una lettura ogni 12."},
-    "normale": {"etichetta": "Normale", "moltiplicatore": 2, "collaudo": 120, "studio": 360, "lettura": 240, "miglioramento": 180,
-                "descrizione": "Un collaudo ogni 2 ore, uno studio ogni 6, una lettura ogni 4."},
+    "normale": {"etichetta": "Normale", "moltiplicatore": 2, "collaudo": 180, "studio": 420, "lettura": 240, "miglioramento": 180,
+                "descrizione": "Un collaudo ogni 3 ore, uno studio ogni 7, una lettura ogni 4."},
     "intenso": {"etichetta": "Intenso", "moltiplicatore": 5, "collaudo": 30, "studio": 120, "lettura": 60, "miglioramento": 60,
                 "descrizione": "Un collaudo ogni mezz'ora, studio ogni 2 ore, lettura ogni ora. Consuma molto."},
 }
@@ -91,6 +91,18 @@ class Pianificatore:
 
         if self.ritmo() is None:
             self.imposta_ritmo(RITMO_PREDEFINITO)
+        else:
+            self._allinea_ritmo()
+
+    def _allinea_ritmo(self):
+        """Il ritmo scelto decide la cadenza di queste routine: dopo un aggiornamento del codice si riallinea."""
+        adesso, ritmo = int(self.adesso()), RITMI.get(self.ritmo())
+        for chiave in ("collaudo", "studio", "lettura", "miglioramento"):
+            ogni = ritmo and ritmo[chiave]
+            r = self.db.uno("SELECT ogni_min, prossima FROM routine WHERE nome=?", (chiave,))
+            if ogni and r and r["ogni_min"] != ogni:
+                self.db.esegui("UPDATE routine SET ogni_min=?, prossima=? WHERE nome=?",
+                               (ogni, min(r["prossima"], adesso + ogni * 60), chiave))
 
     def ritmo(self):
         r = self.db.uno("SELECT valore FROM kv WHERE chiave='ritmo'")
