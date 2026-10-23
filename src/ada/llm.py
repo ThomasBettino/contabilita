@@ -26,10 +26,12 @@ class Claude:
     def disponibile(self) -> bool:
         return bool(self.chiave)
 
-    def _corpo(self, system, messaggi, strumenti, max_tokens):
+    def _corpo(self, system, messaggi, strumenti, max_tokens, scelta=None):
         corpo = {"model": self.modello, "max_tokens": max_tokens, "system": system, "messages": messaggi}
         if strumenti:
             corpo["tools"] = strumenti
+            if scelta:  # il modello deve usare proprio questo strumento: la risposta è dati, non testo da interpretare
+                corpo["tool_choice"] = {"type": "tool", "name": scelta}
         stabile, _, volatile = system.partition(MARCATORE)
         corpo["system"] = stabile + ("\n\n" + volatile if volatile else "")  # senza cache: un testo solo
         if self.cache:
@@ -40,13 +42,13 @@ class Claude:
                 corpo["tools"] = [*strumenti[:-1], {**strumenti[-1], "cache_control": {"type": "ephemeral"}}]
         return corpo
 
-    def __call__(self, system, messaggi, strumenti=None, max_tokens=1500) -> dict:
+    def __call__(self, system, messaggi, strumenti=None, max_tokens=1500, scelta=None) -> dict:
         try:
-            return self._invia(self._corpo(system, messaggi, strumenti, max_tokens))
+            return self._invia(self._corpo(system, messaggi, strumenti, max_tokens, scelta))
         except ErroreLLM as e:
             if self.cache and "cache_control" in str(e):  # se l'API non la accetta, si va avanti senza
                 self.cache = False
-                return self._invia(self._corpo(system, messaggi, strumenti, max_tokens))
+                return self._invia(self._corpo(system, messaggi, strumenti, max_tokens, scelta))
             raise
 
     def _invia(self, corpo) -> dict:

@@ -20,9 +20,9 @@ class FinteRisposte:
     def __init__(self, *risposte):
         self.risposte, self.chiamate = list(risposte), []
 
-    def __call__(self, system, messaggi, strumenti=None, max_tokens=1500):
+    def __call__(self, system, messaggi, strumenti=None, max_tokens=1500, scelta=None):
         self.chiamate.append({"system": system, "strumenti": [t["name"] for t in strumenti or []],
-                              "max_tokens": max_tokens, "ultimo": messaggi[-1]})
+                              "max_tokens": max_tokens, "ultimo": messaggi[-1], "scelta": scelta})
         return self.risposte.pop(0)
 
 
@@ -173,6 +173,15 @@ class TestCacheLLM(unittest.TestCase):
         self.assertEqual(corpo["system"][0]["cache_control"], {"type": "ephemeral"})
         self.assertNotIn("cache_control", corpo["tools"][0])
         self.assertEqual(corpo["tools"][1]["cache_control"], {"type": "ephemeral"})
+
+    def test_uno_strumento_puo_essere_imposto_al_modello(self):
+        llm, inviati = self.llm({"content": []})
+        llm("p", [{"role": "user", "content": "x"}], [{"name": "dai_voto"}], scelta="dai_voto")
+        llm("p", [{"role": "user", "content": "x"}], [{"name": "dai_voto"}])
+        llm("p", [{"role": "user", "content": "x"}], None, scelta="dai_voto")  # senza strumenti non c'è niente da imporre
+        self.assertEqual(inviati[0]["tool_choice"], {"type": "tool", "name": "dai_voto"})
+        self.assertNotIn("tool_choice", inviati[1])
+        self.assertNotIn("tool_choice", inviati[2])
 
     def test_se_l_api_rifiuta_la_cache_si_riprova_senza(self):
         import urllib.error

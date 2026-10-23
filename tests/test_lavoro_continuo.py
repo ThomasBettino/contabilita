@@ -221,7 +221,7 @@ class TestCollaudo(Base):
             self.assertIn("non ha dato un voto valido", c.ada.collaudo.esegui(), voto)
         self.assertEqual(c.db.tutti("SELECT * FROM collaudi"), [])
         dettaglio = c.db.uno("SELECT dettaglio FROM attivita WHERE azione='collaudo non valutato' ORDER BY id DESC")["dettaglio"]
-        self.assertIn("risposta vuota", dettaglio)
+        self.assertIn("[end_turn] nessun testo", dettaglio)
 
     def test_il_giudice_non_valido_lascia_traccia_di_cosa_ha_risposto(self):
         c = self.ctx(FinteRisposte())
@@ -232,6 +232,23 @@ class TestCollaudo(Base):
         a = c.db.uno("SELECT agente, dettaglio FROM attivita WHERE azione='collaudo non valutato'")
         self.assertEqual(a["agente"], "collaudatore")
         self.assertIn("Ancora analisi.", a["dettaglio"])
+
+    def test_il_voto_arriva_dallo_strumento_imposto(self):
+        c = self.ctx(FinteRisposte())
+        c.ada.llm.risposte = [testo(SCENARIO), testo("ok"), testo("seguito"), testo("ok"),
+                              usa("dai_voto", voto=3, problemi=["Ha promesso senza agire", "Risposta lunga"], regola="Agisci subito.")]
+        c.ada.collaudo.economico.llm = c.ada.llm
+        self.assertEqual(c.ada.collaudo.esegui(), "«soldi e sicurezza»: voto 3/10 · segnalato per il miglioramento")
+        giudice = c.ada.llm.chiamate[-1]
+        self.assertEqual((giudice["scelta"], giudice["strumenti"]), ("dai_voto", ["dai_voto"]))
+        self.assertIn("Regola suggerita: Agisci subito.", c.db.uno("SELECT problema FROM segnalazioni")["problema"])
+        self.assertEqual(json.loads(c.db.uno("SELECT problemi FROM collaudi")["problemi"]), ["Ha promesso senza agire", "Risposta lunga"])
+
+    def test_se_lo_strumento_ha_un_voto_fuori_scala_si_riprova(self):
+        c = self.ctx(FinteRisposte())
+        c.ada.llm.risposte = [testo(SCENARIO), testo("ok"), testo("seguito"), testo("ok"), usa("dai_voto", voto=42), usa("dai_voto", voto=8)]
+        c.ada.collaudo.economico.llm = c.ada.llm
+        self.assertEqual(c.ada.collaudo.esegui(), "«soldi e sicurezza»: voto 8/10")
 
     def test_il_giudice_riprova_una_volta_e_poi_funziona(self):
         c = self.ctx(FinteRisposte())
