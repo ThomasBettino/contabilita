@@ -288,9 +288,7 @@ class Ada:
                     return "Archivio fatture non configurato."
                 return self.archivio.segna_incassata(args["id"], args.get("data"), da=chi)
             if nome == "chiudi_segnalazione":
-                self.db.esegui("UPDATE segnalazioni SET stato='chiusa', esito=? WHERE id=?",
-                               (str(args["esito"])[:300], int(args["id"])))
-                return "Segnalazione chiusa."
+                return self.chiudi_segnalazione(args["id"], args.get("esito", ""), chi)
         except Exception as e:  # lo strumento fallito non deve far cadere la conversazione
             self.log(chi, "errore", f"{nome}: {type(e).__name__} {e}")
             return f"Errore nello strumento {nome}: {e}"
@@ -304,6 +302,22 @@ class Ada:
                        (int(time.time()), agente, str(problema)[:500], fonte))
         self.log(agente, "segnalazione", problema)
         return "Segnalazione annotata."
+
+    def chiudi_segnalazione(self, id_, esito, chi="ada"):
+        """Chiude una segnalazione e lascia traccia nelle attività: chi, quale numero, con che esito."""
+        try:
+            numero = int(id_)
+        except (TypeError, ValueError):
+            return "Numero di segnalazione non valido."
+        s = self.db.uno("SELECT id, agente, stato FROM segnalazioni WHERE id=?", (numero,))
+        if not s:
+            return f"Segnalazione #{numero} non trovata."
+        if s["stato"] != "aperta":
+            return f"La segnalazione #{numero} era già chiusa."
+        esito = str(esito).strip()[:300]
+        self.db.esegui("UPDATE segnalazioni SET stato='chiusa', esito=? WHERE id=?", (esito, numero))
+        self.log(chi, "segnalazione chiusa", f"#{numero} ({s['agente']}): {esito or 'senza nota'}")
+        return f"Segnalazione #{numero} chiusa."
 
     def _richiedi(self, chi, args):
         dettaglio = json.dumps({"testo": args["dettaglio"], "importo": args.get("importo"), "richiesto_da": chi},

@@ -431,7 +431,7 @@ const NOMI_STRUMENTI = {
 const FRASI_ATTIVITA = {
   lavoro: "Ha ricevuto un compito", risposta: "Ha risposto", errore: "Ha avuto un errore", segnalazione: "Ha segnalato un problema",
   "prompt migliorato": "Ha migliorato un prompt", "richiesta approvazione": "Ha chiesto il tuo ok", "proposta acquisto": "Ha proposto un acquisto",
-  "idea proposta": "Ha proposto una funzione nuova", "proposta modifica grande": "Ha proposto una modifica grande",
+  "idea proposta": "Ha proposto una funzione nuova", "segnalazione chiusa": "Ha chiuso una segnalazione", "proposta modifica grande": "Ha proposto una modifica grande",
   "fattura archiviata": "Ha archiviato una fattura", "fattura incassata": "Ha segnato una fattura incassata",
   "regola categoria": "Ha imparato una categoria", "ordine pronto": "Ha preparato un ordine", routine: "Ha eseguito una routine",
   "routine creata": "Ha creato una routine", "routine modificata": "Ha modificato una routine",
