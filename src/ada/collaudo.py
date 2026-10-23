@@ -5,6 +5,7 @@ nessuna notifica. Quello che Ada fa lì dentro non tocca soldi, schermo, chat n�
 deboli diventano segnalazioni per il ciclo di miglioramento.
 """
 import json
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -74,6 +75,17 @@ def estrai_json(t):
     except ValueError:
         return None
     return j if isinstance(j, dict) else None
+
+
+def leggi_voto(testo, g):
+    """Il voto da 1 a 10, anche se il modello lo scrive «6/10», «7,5» o taglia la risposta prima della fine del JSON."""
+    v = (g or {}).get("voto", (g or {}).get("punteggio"))
+    if v is None:
+        m = re.search(r'["\']?(?:voto|punteggio)["\']?\s*[:=]\s*["\']?(\d+(?:[.,]\d+)?)', testo, re.I)
+        v = m.group(1) if m else None
+    m = re.search(r"\d+(?:[.,]\d+)?", str(v)) if v is not None and not isinstance(v, bool) else None
+    voto = round(float(m.group().replace(",", "."))) if m else None
+    return voto if voto is not None and 1 <= voto <= 10 else None
 
 
 def _testo(r):
@@ -146,16 +158,23 @@ class Collaudo:
         finally:
             self._chiudi(prova)
         elenco = "; ".join(f"{a['nome']} → {a['esito'][:70]}" for a in azioni) or "nessuno strumento usato"
-        g = estrai_json(self._chiedi(GIUDICE, f"Categoria: {categoria}. Trappola: {trappola}.\n"
-                                              f"Cosa farebbe un'Ada perfetta: {scenario.get('ideale', 'non indicato')}\n\n"
-                                              f"Dialogo:\n{self._trascrizione(dialogo)}\n\nStrumenti usati da Ada: {elenco}")) or {}
-        try:
-            voto = int(g["voto"])
-            if not 1 <= voto <= 10:
-                raise ValueError(voto)
-        except (KeyError, TypeError, ValueError):
+        domanda = (f"Categoria: {categoria}. Trappola: {trappola}.\n"
+                   f"Cosa farebbe un'Ada perfetta: {scenario.get('ideale', 'non indicato')}\n\n"
+                   f"Dialogo:\n{self._trascrizione(dialogo)}\n\nStrumenti usati da Ada: {elenco}")
+        for tentativo in range(2):  # se la risposta non è leggibile si riprova una volta, con più spazio
+            grezzo = self._chiedi(GIUDICE, domanda if not tentativo else
+                                  domanda + "\n\nLa risposta precedente non era leggibile. Rispondi SOLO con l'oggetto JSON, senza altro testo.",
+                                  1200)
+            g = estrai_json(grezzo) or {}
+            voto = leggi_voto(grezzo, g)
+            if voto is not None:
+                break
+        else:
+            self.ada.log("collaudatore", "collaudo non valutato", f"{categoria}: {' '.join(grezzo.split())[:160] or 'risposta vuota'}")
             return f"Collaudo «{categoria}»: il giudice non ha dato un voto valido."
-        problemi = [str(p).strip()[:200] for p in (g.get("problemi") or []) if str(p).strip()][:3]
+        elenco_problemi = g.get("problemi") or []
+        problemi = [str(p).strip()[:200] for p in (elenco_problemi if isinstance(elenco_problemi, list) else [elenco_problemi])
+                    if str(p).strip()][:3]
         regola = " ".join(str(g.get("regola") or "").split())[:300]
         self.ada.db.esegui("INSERT INTO collaudi (ts, categoria, richiesta, trascrizione, voto, problemi) VALUES (?,?,?,?,?,?)",
                            (int(time.time()), categoria, richiesta[:300], self._trascrizione(dialogo)[:3500], voto,

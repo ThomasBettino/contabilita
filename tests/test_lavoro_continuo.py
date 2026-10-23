@@ -12,7 +12,7 @@ from unittest import mock
 
 from src.ada import cervello
 from src.ada.cervello import strumenti_di
-from src.ada.collaudo import CATEGORIE, Collaudo, estrai_json
+from src.ada.collaudo import CATEGORIE, Collaudo, estrai_json, leggi_voto
 from src.ada.llm import ErroreLLM
 from src.ada.pianificatore import RITMI, Pianificatore
 from src.ada.server import costruisci, crea_server
@@ -215,13 +215,41 @@ class TestCollaudo(Base):
         c = self.ctx(FinteRisposte(testo("non è json")), sotto="uno")
         self.assertIn("scenario non valido", c.ada.collaudo.esegui())
         c = self.ctx(FinteRisposte(), sotto="due")
-        c.ada.llm.risposte = [testo(SCENARIO), testo("ok"), testo("seguito"), testo("ok"), testo("niente json qui")]
         c.ada.collaudo.economico.llm = c.ada.llm
-        self.assertIn("non ha dato un voto valido", c.ada.collaudo.esegui())
-        for voto in ('{"voto": 0}', '{"voto": 11}', '{"voto": "alto"}', '{"problemi": []}'):
-            c.ada.llm.risposte = [testo(SCENARIO), testo("ok"), testo("seguito"), testo("ok"), testo(voto)]
+        for voto in ("niente json qui", '{"voto": 0}', '{"voto": 11}', '{"voto": "alto"}', '{"problemi": []}', ""):
+            c.ada.llm.risposte = [testo(SCENARIO), testo("ok"), testo("seguito"), testo("ok"), testo(voto), testo(voto)]  # due volte: si riprova
             self.assertIn("non ha dato un voto valido", c.ada.collaudo.esegui(), voto)
         self.assertEqual(c.db.tutti("SELECT * FROM collaudi"), [])
+        dettaglio = c.db.uno("SELECT dettaglio FROM attivita WHERE azione='collaudo non valutato' ORDER BY id DESC")["dettaglio"]
+        self.assertIn("risposta vuota", dettaglio)
+
+    def test_il_giudice_non_valido_lascia_traccia_di_cosa_ha_risposto(self):
+        c = self.ctx(FinteRisposte())
+        c.ada.llm.risposte = [testo(SCENARIO), testo("ok"), testo("seguito"), testo("ok"), testo("Ecco la mia analisi senza voto."),
+                              testo("Ancora analisi.")]
+        c.ada.collaudo.economico.llm = c.ada.llm
+        c.ada.collaudo.esegui()
+        a = c.db.uno("SELECT agente, dettaglio FROM attivita WHERE azione='collaudo non valutato'")
+        self.assertEqual(a["agente"], "collaudatore")
+        self.assertIn("Ancora analisi.", a["dettaglio"])
+
+    def test_il_giudice_riprova_una_volta_e_poi_funziona(self):
+        c = self.ctx(FinteRisposte())
+        c.ada.llm.risposte = [testo(SCENARIO), testo("ok"), testo("seguito"), testo("ok"), testo("Ragiono ad alta voce..."), testo(GIUDIZIO_BASSO)]
+        c.ada.collaudo.economico.llm = c.ada.llm
+        self.assertIn("voto 4/10", c.ada.collaudo.esegui())
+        self.assertIn("non era leggibile", c.ada.llm.chiamate[-1]["ultimo"]["content"])
+
+    def test_voti_scritti_in_modi_diversi_si_leggono(self):
+        for scritto, atteso in (('{"voto": "6/10"}', 6), ('{"voto": "7,5"}', 8), ('{"voto": 6.4}', 6), ('{"punteggio": 9}', 9),
+                                ('```json\n{"voto": "8"}\n```', 8), ('{"voto": 7, "problemi": ["troncato', 7),
+                                ('Il mio voto: 5', 5), ('Niente numeri qui', None), ('{"voto": true}', None), ('{"voto": null}', None), ('{"voto": 10.6}', None)):
+            self.assertEqual(leggi_voto(scritto, estrai_json(scritto)), atteso, scritto)
+
+    def test_problemi_scritti_come_testo_semplice_non_diventano_lettere(self):
+        c = self.ctx(FinteRisposte())
+        self.giro(c, json.dumps({"voto": 5, "problemi": "Ha promesso senza agire", "regola": ""}))
+        self.assertEqual(json.loads(c.db.uno("SELECT problemi FROM collaudi")["problemi"]), ["Ha promesso senza agire"])
 
     def test_modello_economico_assente_si_ripiega_su_quello_principale(self):
         class Rotto(FinteRisposte):
