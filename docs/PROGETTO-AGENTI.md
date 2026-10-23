@@ -12,6 +12,9 @@ Decisioni:
 - **Architettura:** un solo agente principale ("Io digitale") che ragiona, pianifica e usa il telefono. Gli assistenti specializzati diventano **competenze/sotto-agenti** che il Capo richiama quando servono. Il ciclo di auto-miglioramento resta.
 - **Limiti da conoscere:** le app bancarie possono bloccare l'uso automatico; un errore su azioni non reversibili (messaggio inviato, dato cancellato) non si annulla. Per questo la cancellazione di dati importanti e la modifica di documenti fiscali restano tracciate con copia di sicurezza prima di ogni modifica.
 
+- **Dispositivo:** il tuo telefono personale. Rischi: l'agente vede tutto (chat, foto) e può intralciare l'uso normale. Mitigazioni: tasto di arresto immediato, log di ogni azione, lavoro in momenti che scegli tu.
+- **Attivazione:** sempre attivo (controlla a intervalli fatture, notifiche, scadenze) e a comando (esegue subito ciò che gli scrivi su un canale di chat).
+
 Dove questa sezione contraddice quelle sotto, vale questa.
 
 
