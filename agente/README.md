@@ -28,6 +28,9 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
                      └─ Rapporto di Agente 1: nell'app, per email e sul telefono (di notte in silenzio, al mattino tutto)
                     Sentinella stelle (attività programmata Claude, alle :37, 8–24)
                      └─ ricontrolla stelle e segnalazioni di assistenza a metà ora
+                    Reparto Ricerca (attività programmata Claude, ogni 2 ore dalle 8:47 alle 20:47)
+                     └─ Osservatore, Riparatore, Inventore, Sviluppatore, Revisore: trova bug ed errori,
+                        prepara correzioni e migliorie già provate; entrano solo col tuo sì
 ```
 
 ## Perché è fatto così
@@ -51,6 +54,9 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 - `ponte/controllo.js` (addetto Controllo) segnala solo le novità da sistemare nell'app vendite: appuntamenti e test drive passati non segnati, preventivi senza richiamo, clienti senza telefono, vendite senza margine, finanziamenti fermi o rifiutati.
 - `ponte/rapporto.js` scrive il rapporto di Agente 1 ("Ho parlato con il Reparto Contabilità e mi ha detto che..."), l'email per te e il testo della notifica; di notte accumula e al primo turno del mattino racconta tutto.
 - `ponte/TURNO.md` è la procedura che il turno esegue ogni ora. Il pulsante Aggiorna, gli ordini e i compiti lo fanno partire subito.
+- `ricerca/RICERCA.md` è la procedura del **Reparto Ricerca**. Il Riparatore trova bug ed errori (turni falliti, script sbagliati, ordini bloccati, procedure confuse) e prepara la correzione con una prova che la dimostra. Lo Sviluppatore prepara migliorie e automazioni, il Revisore le controlla. Ogni proposta arriva nella pagina Squadra ("Proposte della Ricerca") e nel rapporto. **Niente entra senza il tuo sì**: premi "Sì, applica" o dillo ad Agente 1, e la Ricerca la applica in qualche minuto. Le novità arrivano anche nel briefing della sera.
+- `ricerca/REGISTRO.md` elenca le correzioni e le migliorie entrate.
+- `test/ponte.test.js` prova gli script del turno e la procedura (ogni passo citato esiste): la Ricerca lo usa per ogni modifica.
 
 ## Database di Agente 1
 
@@ -65,7 +71,9 @@ Tu ── chat/voce ──► │  capo: ragiona, delega, dà la sua opinione   
 | `sync/turno`, `sync/controllo` | Ultimo turno, addetti e novità della notte; esito del controllo vendite | Turno |
 | `calendario/<chiave>`, `posta/<id>` | Mappa appuntamento → evento di Google Calendar; email già viste | Turno |
 | `config/squadra` | Agenti creati da te e specialisti tolti dalla squadra | Pagina Squadra |
-| `config/ponte` | Id dell'attività programmata, per il pulsante Aggiorna | Claude |
+| `config/ponte` | Id delle attività programmate del turno e della Ricerca, per il pulsante Aggiorna e il "Sì, applica" | Claude |
+| `ricerca/<id>` | Proposte della Ricerca: correzioni e migliorie con patch e prove, `da approvare` → `approvata`/`rifiutata` (solo tu) → `applicata` | Ricerca; la decisione la pagina Squadra o Agente 1 (`decidi_proposta`) |
+| `sync/ricerca` | Ultimo giro della Ricerca, addetti, applicate, errori aperti, idee | Ricerca |
 | `data/users/<tu>/chat`, `.../memoria` | Conversazione e cose da ricordare, private | Agente 1 |
 
 ## Contabilità: come si collega
