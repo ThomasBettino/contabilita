@@ -195,7 +195,7 @@ def main():
     if host not in LOOPBACK and not ctx.token:
         sys.exit("Rifiuto di partire su una rete aperta senza ADA_TOKEN: imposta un token o usa ADA_HOST=127.0.0.1.")
     srv = crea_server(ctx, host, porta)
-    print(f"Ada è pronta su http://{host}:{porta}  (cervello: {'collegato' if ctx.ada.llm.disponibile else 'NON collegato'})")
+    print(f"Ada è pronta su http://{host}:{porta}  (cervello: {'collegato' if ctx.ada.llm.disponibile else 'NON collegato'})", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
