@@ -166,6 +166,8 @@ def crea_handler(ctx):
         def _rotta(self, metodo, path, corpo):
             if metodo == "GET" and path == "/api/stato":
                 return ctx.stato()
+            if metodo == "GET" and path == "/api/lavori":
+                return {"lavori": [{"nome": n, "titolo": AGENTI[n][0], **v} for n, v in list(ctx.ada.lavori.items()) if n in AGENTI]}
             if metodo == "GET" and path == "/api/chat":
                 return {"messaggi": ctx.db.tutti("SELECT ts, ruolo, testo FROM chat ORDER BY id DESC LIMIT 50")[::-1]}
             if metodo == "POST" and path == "/api/chat":

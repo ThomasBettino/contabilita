@@ -62,7 +62,7 @@ Con l'hub acceso, Ada ha tre **routine** (le vedi in **Registro**, dove puoi spe
 - **Promemoria**, ogni 2 ore: ti ricorda con una notifica le decisioni ferme da più di 2 ore.
 
 **Ogni giorno una miglioria (alle 6:30).** Ada guarda cosa è successo (attività, errori, segnalazioni, spese rimaste senza categoria) e sceglie la miglioria più utile e a basso rischio.
-- **Cose che fa da sola, subito:** correggere i prompt dei suoi assistenti, creare o cambiare routine, insegnare regole di categoria alle spese (per esempio "Anthropic" va in Abbonamenti), chiudere segnalazioni. Tutto compare in **Registro** e si può annullare.
+- **Cose che fa da sola, subito:** correggere i prompt dei suoi assistenti (di norma aggiungendo una regola breve in fondo, nella sezione «Regole imparate»; riscrivere tutto un prompt è l'eccezione), creare o cambiare routine, insegnare regole di categoria alle spese (per esempio "Anthropic" va in Abbonamenti), chiudere segnalazioni. Tutto compare in **Registro** e si può annullare.
 - **Funzioni nuove che richiedono codice:** le **propone**, una al giorno al massimo. La proposta arriva in **Approva** con una notifica. Se approvi, compare in **Registro, Idee di Ada** con un tasto che copia il testo pronto da dare a chi sviluppa; quando è realizzata la segni come **Fatta**.
 - **Realizzazione:** le idee approvate non partono da sole. Con **Copia il testo per lo sviluppo** prepari un testo completo, con i vincoli di sicurezza già dentro, da dare a chi sviluppa. Quando la funzione è pronta la segni **Fatta**.
 - **Cosa non fa mai:** modificare il proprio codice o i confini di sicurezza (soldi, tasto finale, schermo).

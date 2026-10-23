@@ -99,12 +99,22 @@ async function manda(testo) {
   const pensa = bolla("ada", "Ci penso…", "pensa");
   msgs.append(pensa); scorriChat();
   $("orb").classList.add("pensa");
+  // mentre aspetta, la bolla dice cosa sta facendo (chi lavora e quale strumento sta usando)
+  const segui = setInterval(async () => {
+    try {
+      const { lavori } = await api("/api/lavori");
+      if (!lavori.length) return;
+      pensa.textContent = lavori.map((l) => `${l.titolo}: ${l.cosa}` + (l.passo ? ` · ${NOMI_STRUMENTI[l.passo] || l.passo}` : "")).join("\n");
+      scorriChat();
+    } catch (e) { /* si riprova al prossimo giro */ }
+  }, 1500);
   try {
     const { risposta } = await api("/api/chat", { messaggio: testo });
     pensa.className = "msg ada"; pensa.replaceChildren(testoRicco(risposta));
   } catch (e) {
     pensa.className = "msg ada"; pensa.textContent = "Non riesco a rispondere: " + e.message;
   } finally {
+    clearInterval(segui);
     $("orb").classList.remove("pensa");
     inp.disabled = btn.disabled = false; scorriChat();
     aggiorna();

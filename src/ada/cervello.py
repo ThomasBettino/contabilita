@@ -24,12 +24,18 @@ MAX_ROUTINE = 8            # routine create da Ada
 MIN_INTERVALLO = 30        # minuti: argine ai costi
 LIMITE_TOKEN = int(os.environ.get("ADA_LIMITE_TOKEN", "400000"))  # tetto giornaliero per i lavori automatici
 PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
+MAX_TOKEN = 4096          # spazio per ogni risposta: i prompt interi nelle chiamate agli strumenti sono lunghi
+MAX_TOKEN_RIPROVA = 8192  # se una risposta viene tagliata si riprova una volta con più spazio
+# «lo faccio adesso» senza aver chiamato nessuno strumento: l'errore da intercettare
+PROMESSA = re.compile(r"\b(?:lo|la|li|le)\s+(?:faccio|applico|salvo|scrivo|invio)\s+(?:ora|adesso|subito|partire)\b"
+                      r"|\b(?:faccio|applico|procedo|parto)\s+(?:ora|adesso|subito)\b|\badesso\s+(?:lo|la)\s+(?:faccio|applico)\b"
+                      r"|\bmi metto al lavoro\b|\b(?:la|lo)\s+faccio\s+partire\b", re.I)
 MAX_REGOLE = 80
 MAX_IDEE_APERTE = 6
 IDEE_APERTE = "('proposta','approvata')"
 
 # Fissato nel codice (non in un prompt che Ada può riscrivere): il capo decide e agisce.
-MANDATO = """COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se una opzione è chiaramente la migliore, non elencarne tre."""
+MANDATO = """COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Per correggere un prompt usa aggiungi_regola_prompt, una regola breve alla volta: è il modo più semplice e sicuro; migliora_prompt (riscrittura intera) solo se serve davvero. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se dici che fai qualcosa, chiama subito lo strumento: non promettere e basta. Se una opzione è chiaramente la migliore, non elencarne tre."""
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese; la lettura delle notifiche non dipende dal collegamento dello schermo); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
@@ -49,6 +55,10 @@ T_FATTURE = _tool("riepilogo_fatture", "Riepilogo delle fatture P.IVA del mese (
                   {"mese": {"type": "string", "description": "AAAA-MM, default il mese corrente"}}, [])
 T_INCASSATA = _tool("fattura_incassata", "Segna una fattura come incassata nell'archivio (usa l'id mostrato da riepilogo_fatture).",
                     {"id": _S, "data": {"type": "string", "description": "AAAA-MM-GG, default oggi"}}, ["id"])
+T_REGOLA_PROMPT = _tool("aggiungi_regola_prompt",
+                        "Aggiunge UNA regola breve in fondo al prompt di un agente (sezione «Regole imparate»). È il modo più semplice e sicuro di correggerlo: preferiscilo a migliora_prompt, che richiede di riscrivere tutto il prompt.",
+                        {"agente": {"type": "string", "enum": list(AGENTI)}, "regola": _S, "motivo": _S},
+                        ["agente", "regola", "motivo"])
 T_IDEA = _tool("proponi_idea", "Proponi una funzione nuova per l'app che richiede codice. L'utente approva o rifiuta. Una sola idea nuova al giorno.",
                {"titolo": _S, "descrizione": {"type": "string", "description": "Cosa farebbe, come lo vedrebbe l'utente (30-800 caratteri)"},
                 "motivo": {"type": "string", "description": "Perché serve, con un fatto osservato"}}, ["titolo", "descrizione", "motivo"])
@@ -100,7 +110,7 @@ T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata fina
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_FATTURE, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
-STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA, T_IDEA, T_REGOLA]
+STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_REGOLA_PROMPT, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA, T_IDEA, T_REGOLA]
 GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
 
 
@@ -188,24 +198,53 @@ class Ada:
     # ---------- ciclo con strumenti ----------
     def _ciclo(self, chi, messaggi, strumenti):
         system = self.squadra.system(chi, self._contesto(chi))
-        testo = ""
+        testo, azioni, spinte, spazio = "", [], 0, MAX_TOKEN
         for _ in range(GIRI.get(chi, self.max_giri)):
-            r = self.llm(system, messaggi, strumenti)
+            r = self.llm(system, messaggi, strumenti, max_tokens=spazio)
             self._conta(r)
             blocchi = r.get("content", [])
             testo = "".join(b.get("text", "") for b in blocchi if b.get("type") == "text").strip()
-            if r.get("stop_reason") != "tool_use":
-                return testo
+            fine = r.get("stop_reason")
+            if fine == "max_tokens":
+                # la risposta (spesso un prompt intero dentro la chiamata a uno strumento) è stata tagliata
+                if spazio < MAX_TOKEN_RIPROVA:
+                    spazio = MAX_TOKEN_RIPROVA
+                    self.log(chi, "errore", "risposta troppo lunga: riprovo con più spazio")
+                    continue
+                self.log(chi, "errore", "risposta troppo lunga anche con più spazio")
+                return ((testo + "\n\n") if testo else "") + (
+                    "La mia risposta si è interrotta perché troppo lunga e non ho potuto completare l'azione: "
+                    "riprovo con una modifica più piccola se me lo chiedi.")
+            if fine != "tool_use":
+                if strumenti and spinte < 1 and PROMESSA.search(testo):
+                    spinte += 1  # ha promesso di agire senza farlo: la si rimanda a farlo, una volta sola
+                    messaggi.append({"role": "assistant", "content": blocchi})
+                    messaggi.append({"role": "user", "content": "Hai scritto che lo fai adesso ma non hai chiamato nessuno "
+                                     "strumento. Chiamalo ora; se non puoi farlo, dillo chiaramente senza promettere."})
+                    continue
+                return testo or self._riassunto(azioni)
             messaggi.append({"role": "assistant", "content": blocchi})
-            esiti = [{"type": "tool_result", "tool_use_id": b["id"],
-                      "content": self._esegui(chi, b["name"], b.get("input") or {})}
-                     for b in blocchi if b.get("type") == "tool_use"]
+            esiti = []
+            for b in blocchi:
+                if b.get("type") == "tool_use":
+                    esito = self._esegui(chi, b["name"], b.get("input") or {})
+                    azioni.append(f"{b['name']}: {str(esito)[:80]}")
+                    esiti.append({"type": "tool_result", "tool_use_id": b["id"], "content": esito})
             messaggi.append({"role": "user", "content": esiti})
-        return testo or "Ho raggiunto il limite di passaggi per questa richiesta."
+        return testo or self._riassunto(azioni, limite=True)
+
+    @staticmethod
+    def _riassunto(azioni, limite=False):
+        """Una risposta non è mai vuota: se manca il testo si racconta cosa è stato fatto."""
+        if azioni:
+            return "Ho eseguito: " + "; ".join(azioni[-4:])
+        return "Ho raggiunto il limite di passaggi per questa richiesta." if limite else "Ho finito, ma non ho nulla da riferire."
 
     def _esegui(self, chi, nome, args):
         if nome not in [t["name"] for t in strumenti_di(chi)]:
             return "Strumento non consentito."
+        if chi in self.lavori:
+            self.lavori[chi]["passo"] = nome  # si vede dal popup e dalla chat cosa sta usando
         try:
             if nome == "riepilogo_spese":
                 return self.soldi.testo(args.get("periodo", "mese"))
@@ -217,6 +256,8 @@ class Ada:
                 return self._delega(args["agente"], args["compito"])
             if nome == "migliora_prompt":
                 return self._migliora(args["agente"], args["nuovo_prompt"], args["motivo"])
+            if nome == "aggiungi_regola_prompt":
+                return self._aggiungi_regola(args["agente"], args["regola"], args["motivo"])
             if nome.startswith("telefono_"):
                 return self._telefono(nome, args)
             if nome == "proponi_acquisto":
@@ -429,6 +470,25 @@ class Ada:
         self.log("ada", "proposta modifica grande", f"{agente}: {motivo}")
         self._avvisa_attesa()
         return f"Modifica grande (#{mid}): non applicata, serve l'ok dell'utente (richiesta #{cur.lastrowid})."
+
+    def _aggiungi_regola(self, agente, regola, motivo):
+        """Una regola breve in fondo al prompt: cambio piccolo, senza riscrivere tutto."""
+        if agente not in AGENTI:
+            return "Agente sconosciuto."
+        regola = " ".join(str(regola).split())
+        if not 15 <= len(regola) <= 300:
+            return "La regola deve avere tra 15 e 300 caratteri."
+        vecchio = self.squadra.prompt(agente).rstrip()
+        if regola in vecchio:
+            return "Questa regola c'è già."
+        titolo = "## Regole imparate"
+        if titolo in vecchio:
+            i = vecchio.index(titolo)
+            j = vecchio.find("\n## ", i + len(titolo))
+            nuovo = vecchio + f"\n- {regola}" if j == -1 else vecchio[:j].rstrip() + f"\n- {regola}" + vecchio[j:]
+        else:
+            nuovo = vecchio + f"\n\n{titolo}\n- {regola}"
+        return self._migliora(agente, nuovo, motivo)
 
     def _applica(self, mid):
         m = self.db.uno("SELECT * FROM miglioramenti WHERE id=?", (mid,))

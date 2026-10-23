@@ -21,7 +21,8 @@ class FinteRisposte:
         self.risposte, self.chiamate = list(risposte), []
 
     def __call__(self, system, messaggi, strumenti=None, max_tokens=1500):
-        self.chiamate.append({"system": system, "strumenti": [t["name"] for t in strumenti or []]})
+        self.chiamate.append({"system": system, "strumenti": [t["name"] for t in strumenti or []],
+                              "max_tokens": max_tokens, "ultimo": messaggi[-1]})
         return self.risposte.pop(0)
 
 
