@@ -297,7 +297,8 @@ function disegnaRitmo(r, tokenAttivo) {
       try { await api("/api/ritmo", { ritmo: k }); toast("Ritmo: " + o.etichetta); aggiorna(); } catch (e) { toast(e.message); }
     } }, o.etichetta)));
   const scelto = opzioni[r.scelto];
-  $("ritmo-nota").textContent = !tokenAttivo ? "Per cambiare il ritmo serve prima un token di accesso: vedi docs/AVVIO.md."
+  $("ritmo-nota").textContent = !Object.keys(opzioni).length ? "Ada gira ancora con la versione vecchia: riavviala per vedere i ritmi (vedi docs/AVVIO.md, «Se il telefono si spegne o si riavvia»)."
+    : !tokenAttivo ? "Per cambiare il ritmo serve prima un token di accesso: vedi docs/AVVIO.md."
     : scelto ? scelto.descrizione : "";
 }
 
