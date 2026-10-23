@@ -3,6 +3,7 @@
 I confini (soldi, modifiche grandi, deriva dei prompt) sono imposti qui nel codice,
 non nei prompt: quello che Ada può riscrivere non include mai queste regole.
 """
+import contextlib
 import difflib
 import json
 import os
@@ -116,12 +117,22 @@ class Ada:
     def __init__(self, db, squadra, soldi, llm, mano=None, max_giri=6):
         self.db, self.squadra, self.soldi, self.llm, self.mano, self.max_giri = db, squadra, soldi, llm, mano, max_giri
         self.lock = threading.Lock()
+        self.lavori = {}          # agente -> {"cosa", "da"}: chi sta lavorando adesso e a cosa (per il popup)
         self.automatico = False   # vero durante una routine: niente schermo senza l'utente
         self.notifica = None      # funzione(titolo, testo, id) impostata dal server
         self.archivio = None      # archivio fatture P.IVA (src/ada/fatture.py)
         self.soldi.regole = {r["parola"]: r["categoria"] for r in self.db.tutti("SELECT parola, categoria FROM regole_categoria")}
 
     # ---------- utilità ----------
+    @contextlib.contextmanager
+    def _lavora(self, chi, cosa):
+        """Segna che `chi` sta lavorando a `cosa`: serve a mostrare l'attività vera, non quella recente."""
+        self.lavori[chi] = {"cosa": str(cosa)[:140], "da": int(time.time())}
+        try:
+            yield
+        finally:
+            self.lavori.pop(chi, None)
+
     def avvisa(self, titolo, testo, id_="ada"):
         if self.notifica:
             try:
@@ -437,7 +448,8 @@ class Ada:
             return "Agente sconosciuto."
         self.log(agente, "lavoro", compito)
         try:
-            risposta = self._ciclo(agente, [{"role": "user", "content": compito}], strumenti_di(agente))
+            with self._lavora(agente, compito):
+                risposta = self._ciclo(agente, [{"role": "user", "content": compito}], strumenti_di(agente))
         except ErroreLLM as e:
             self.log(agente, "errore", e)
             return f"L'assistente non ha risposto: {e}"
@@ -473,7 +485,8 @@ class Ada:
                 risposta = self._senza_cervello(testo)
             else:
                 try:
-                    risposta = self._ciclo("ada", self._storia(), STRUMENTI_ADA) or "…"
+                    with self._lavora("ada", "Sto rispondendo alla tua chat"):
+                        risposta = self._ciclo("ada", self._storia(), STRUMENTI_ADA) or "…"
                 except ErroreLLM as e:
                     self.log("ada", "errore", e)
                     risposta = f"Non riesco a collegarmi al mio cervello in questo momento ({str(e)[:160]}). Riprova tra poco."
@@ -493,7 +506,8 @@ class Ada:
         with self.lock:
             self.automatico = automatico
             try:
-                risposta = self._ciclo("ada", [{"role": "user", "content": richiesta}], STRUMENTI_ADA)
+                with self._lavora("ada", "Rivedo le segnalazioni e miglioro i prompt"):
+                    risposta = self._ciclo("ada", [{"role": "user", "content": richiesta}], STRUMENTI_ADA)
             except ErroreLLM as e:
                 self.log("ada", "errore", e)
                 return f"Ciclo interrotto: {str(e)[:160]}"
@@ -511,8 +525,9 @@ class Ada:
         with self.lock:
             self.automatico = True
             try:
-                risposta = self._ciclo("ada", [{"role": "user", "content": f"[ROUTINE AUTOMATICA {nome}] {prompt}"}],
-                                       STRUMENTI_ADA)
+                with self._lavora("ada", f"Routine: {nome.replace('_', ' ')}"):
+                    risposta = self._ciclo("ada", [{"role": "user", "content": f"[ROUTINE AUTOMATICA {nome}] {prompt}"}],
+                                           STRUMENTI_ADA)
             except ErroreLLM as e:
                 self.log("ada", "errore", e)
                 return f"Errore: {str(e)[:150]}"

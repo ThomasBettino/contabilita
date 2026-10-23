@@ -111,10 +111,25 @@
 </nav>
 
 <dialog id="dlg">
-  <form method="dialog" class="dlg-testa"><h3 id="dlg-titolo"></h3><button aria-label="Chiudi">✕</button></form>
-  <p class="nota" id="dlg-descr"></p>
-  <pre id="dlg-prompt"></pre>
-  <div id="dlg-migl" class="lista compatta"></div>
+  <form method="dialog" class="dlg-chiudi"><button aria-label="Chiudi">✕</button></form>
+  <div class="ag-testa">
+    <div class="ag-avatar" id="ag-avatar"><span id="ag-emoji" aria-hidden="true"></span></div>
+    <div class="ag-nome"><h3 id="dlg-titolo"></h3><p class="nota" id="dlg-descr"></p></div>
+  </div>
+  <div class="ag-ora" id="ag-ora" aria-live="polite"></div>
+  <h4>Ultime attività</h4>
+  <div class="ag-storia" id="ag-storia"></div>
+  <h4>Cosa sa fare</h4>
+  <div class="ag-strumenti" id="ag-strumenti"></div>
+  <div id="ag-segn" hidden>
+    <h4>Segnalazioni aperte</h4>
+    <div class="lista compatta" id="ag-segn-lista"></div>
+  </div>
+  <details class="ag-prompt">
+    <summary>Come è istruito (il suo prompt)</summary>
+    <pre id="dlg-prompt"></pre>
+    <div id="dlg-migl" class="lista compatta"></div>
+  </details>
   <form id="form-feedback" class="feedback">
     <textarea id="fb-testo" rows="3" placeholder="Cosa non va? Ada lo annota e corregge il prompt se serve." maxlength="500"></textarea>
     <button class="primario" type="submit">Segnala ad Ada</button>

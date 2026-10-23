@@ -106,8 +106,9 @@ class Pianificatore:
         if not a or not a.configurato:
             return "Non configurato: mancano ADA_FATTURE_URL e ADA_FATTURE_TOKEN."
         try:
-            s = a.sincronizza()
-            inc = a.elabora_incassi()
+            with self.ada._lavora("contabilita_piva", "Aggiorno l'archivio fatture e cerco i bonifici in arrivo"):
+                s = a.sincronizza()
+                inc = a.elabora_incassi()
         except ErroreFatture as e:
             return f"Non riesco a leggere l'archivio: {e}"
         return f"Archivio: {s['totale']} fatture ({s['nuove']} nuove). {inc}"[:250]

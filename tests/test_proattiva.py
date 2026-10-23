@@ -201,6 +201,71 @@ class TestMiglioriaQuotidiana(Base):
         self.assertIn("qualcosa è andato storto", out)
 
 
+class TestChiStaLavorando(Base):
+    def test_in_corso_solo_mentre_lavora_davvero(self):
+        visto = {}
+        c = self.ctx()
+
+        class Spia(FinteRisposte):
+            def __call__(inner, system, messaggi, strumenti=None, max_tokens=1500):
+                visto["durante"] = {k: v["cosa"] for k, v in c.ada.lavori.items()}
+                visto["stato"] = {a["nome"]: a["attivo"] for a in c.stato()["agenti"]}
+                return super().__call__(system, messaggi, strumenti, max_tokens)
+        c.ada.llm = Spia(testo("Il calcolo è giusto."))
+        c.ada._delega("revisore", "controlla 2+2")
+        self.assertEqual(visto["durante"], {"revisore": "controlla 2+2"})
+        self.assertTrue(visto["stato"]["revisore"])
+        self.assertFalse(visto["stato"]["sviluppo"])        # nessuno acceso per finta
+        self.assertEqual(c.ada.lavori, {})                   # a fine lavoro si spegne
+        self.assertFalse({a["nome"]: a["attivo"] for a in c.stato()["agenti"]}["revisore"])
+
+    def test_si_spegne_anche_se_il_lavoro_fallisce(self):
+        from src.ada.llm import ErroreLLM
+
+        class Rotto(FinteRisposte):
+            def __call__(self, *a, **k):
+                raise ErroreLLM("rete")
+        c = self.ctx(Rotto())
+        c.ada._delega("sviluppo", "fai qualcosa")
+        self.assertEqual(c.ada.lavori, {})
+
+    def test_ada_risulta_al_lavoro_durante_la_chat_e_la_routine(self):
+        c = self.ctx()
+        durante = []
+
+        class Spia(FinteRisposte):
+            def __call__(inner, *a, **k):
+                durante.append(dict(c.ada.lavori.get("ada") or {}))
+                return super().__call__(*a, **k)
+        c.ada.llm = Spia(testo("ok"), testo("fatto"))
+        c.ada.chiacchiera("ciao")
+        c.ada.lavoro_proattivo("fai il riepilogo per favore", "riepilogo_sera")
+        self.assertEqual(durante[0]["cosa"], "Sto rispondendo alla tua chat")
+        self.assertEqual(durante[1]["cosa"], "Routine: riepilogo sera")
+        self.assertEqual(c.ada.lavori, {})
+
+    def test_dettaglio_agente_per_il_popup(self):
+        import json as _json
+        import urllib.request as _rq
+        c = self.ctx()
+        c.ada.log("revisore", "lavoro", "controlla 2+2")
+        c.ada.log("revisore", "risposta", "Il calcolo è giusto.")
+        c.ada.segnala("revisore", "ha sbagliato un totale", "utente")
+        c.ada.lavori["revisore"] = {"cosa": "Ricontrollo i totali", "da": int(time.time()) - 5}
+        srv = crea_server(c, "127.0.0.1", 0)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        self.addCleanup(srv.server_close)
+        d = _json.load(_rq.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/api/agenti/revisore"))
+        self.assertEqual(d["titolo"], "Revisore")
+        self.assertEqual(d["in_corso"]["cosa"], "Ricontrollo i totali")
+        self.assertEqual([a["azione"] for a in d["attivita"]], ["segnalazione", "risposta", "lavoro"])  # dal più recente
+        self.assertIn("riepilogo_spese", d["strumenti"])
+        self.assertNotIn("migliora_prompt", d["strumenti"])  # il revisore non può migliorare i prompt
+        self.assertEqual(d["segnalazioni"][0]["problema"], "ha sbagliato un totale")
+        self.assertIn("Revisore", d["prompt"])
+
+
 class TestStatoSistema(Base):
     def test_stato_sistema_mostra_cosa_aspetta_l_utente(self):
         c = self.ctx()

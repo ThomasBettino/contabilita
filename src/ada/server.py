@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .agenti import AGENTI, Squadra
-from .cervello import Ada
+from .cervello import Ada, strumenti_di
 from .db import DB, casa
 from .fatture import HOST_SCRIPT, Archivio, ClienteScript, Config, ErroreFatture
 from .segreti import Segreti
@@ -56,7 +56,8 @@ class Contesto:
             agenti.append({
                 "nome": nome, "titolo": titolo, "descrizione": descr,
                 "ultima_attivita": ult,
-                "attivo": bool(ult and ora - ult["ts"] < 300),
+                "in_corso": self.ada.lavori.get(nome),
+                "attivo": nome in self.ada.lavori,
                 "segnalazioni_aperte": self.db.uno(
                     "SELECT COUNT(*) AS n FROM segnalazioni WHERE agente=? AND stato='aperta'", (nome,))["n"],
                 "versioni": self.db.uno(
@@ -238,10 +239,15 @@ def crea_handler(ctx):
             if metodo == "GET" and m:
                 if m.group(1) not in AGENTI:
                     raise LookupError("Agente sconosciuto.")
-                return {"nome": m.group(1), "prompt": ctx.squadra.prompt(m.group(1)),
+                nome = m.group(1)
+                return {"nome": nome, "titolo": AGENTI[nome][0], "descrizione": AGENTI[nome][1],
+                        "prompt": ctx.squadra.prompt(nome), "in_corso": ctx.ada.lavori.get(nome),
+                        "strumenti": [t["name"] for t in strumenti_di(nome)],
+                        "attivita": ctx.db.tutti("SELECT ts, azione, dettaglio FROM attivita WHERE agente=? ORDER BY id DESC LIMIT 10", (nome,)),
+                        "segnalazioni": ctx.db.tutti("SELECT id, problema, ts FROM segnalazioni WHERE agente=? AND stato='aperta' ORDER BY id", (nome,)),
                         "miglioramenti": ctx.db.tutti(
                             "SELECT id, ts, motivo, tipo, stato FROM miglioramenti WHERE agente=? ORDER BY id DESC LIMIT 10",
-                            (m.group(1),))}
+                            (nome,))}
             m = re.fullmatch(r"/api/approvazioni/(\d+)", path)
             if metodo == "POST" and m:
                 if corpo.get("esito") not in ("approva", "rifiuta"):

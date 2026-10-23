@@ -15,7 +15,7 @@ function h(tag, attrs, ...figli) {
   for (const f of figli.flat()) if (f != null) el.append(f.nodeType ? f : document.createTextNode(String(f)));
   return el;
 }
-const svuota = (el, ...nuovi) => el.replaceChildren(...nuovi.flat());
+const svuota = (el, ...nuovi) => el.replaceChildren(...nuovi.flat().filter((x) => x != null && x !== false));
 
 function leggiToken() { try { return localStorage.getItem("ada_token") || ""; } catch (e) { return ""; } }
 function salvaToken(t) { try { localStorage.setItem("ada_token", t); } catch (e) { /* storage bloccato */ } }
@@ -123,7 +123,7 @@ function disegna(s) {
   $("stato-ada").textContent = !s.ada.cervello
     ? "Cervello non collegato"
     : s.approvazioni.length ? `${s.approvazioni.length} cose aspettano te`
-    : s.segnalazioni_aperte ? `${s.segnalazioni_aperte} problemi da sistemare`
+    : s.segnalazioni_aperte ? `${s.segnalazioni_aperte} ${s.segnalazioni_aperte === 1 ? "problema da sistemare" : "problemi da sistemare"}`
     : "Tutto sotto controllo" + ((s.telefono || {}).collegato ? "" : " · schermo non collegato");
   const tel = s.telefono || {};
   const stop = $("btn-stop");
@@ -138,8 +138,10 @@ function disegna(s) {
   $("pill-appr").textContent = n + " da approvare";
 
   svuota($("team"), s.agenti.map((a) => h("button", { class: "card", type: "button", onclick: () => apriAgente(a) },
-    h("span", { class: "stato" + (a.attivo ? " attivo" : "") }, a.attivo ? "al lavoro" : "pronto"),
-    h("b", null, a.titolo), h("small", null, a.descrizione),
+    h("div", { class: "riga-alto" }, h("span", { class: "icona", "aria-hidden": "true" }, ICONE_AGENTE[a.nome] || "🤖"),
+      h("span", { class: "stato" + (a.attivo ? " attivo" : "") }, a.attivo ? "al lavoro" : "pronto")),
+    h("b", null, a.titolo),
+    a.in_corso ? h("small", { class: "cosa" }, a.in_corso.cosa) : h("small", null, a.descrizione),
     h("div", null,
       a.segnalazioni_aperte ? h("span", { class: "tag warn" }, a.segnalazioni_aperte + (a.segnalazioni_aperte === 1 ? " segnalazione " : " segnalazioni ")) : null,
       a.versioni ? h("span", { class: "tag ok" }, "v" + (a.versioni + 1)) : null))));
@@ -376,19 +378,68 @@ $("btn-stop").addEventListener("click", async () => {
 });
 
 /* ---------- dettaglio agente ---------- */
-let agenteAperto = null;
+const ICONE_AGENTE = { ada: "✨", contabilita_piva: "🧾", contabilita_privata: "💳", quotidiano: "🗓️", sviluppo: "🛠️",
+  clienti_vendite: "🤝", acquisti: "🛒", revisore: "🔍" };
+const NOMI_STRUMENTI = {
+  riepilogo_spese: "Legge le spese", riepilogo_fatture: "Legge le fatture", annota_segnalazione: "Annota i problemi",
+  richiedi_approvazione: "Chiede il tuo ok", telefono_collega: "Collega lo schermo", telefono_schermo: "Guarda lo schermo",
+  telefono_tocca: "Tocca lo schermo", telefono_scrivi: "Scrive sullo schermo", telefono_scorri: "Scorre le pagine",
+  telefono_vai: "Indietro e home", telefono_apri: "Apre app e pagine", proponi_acquisto: "Propone acquisti",
+  acquisto_pronto: "Prepara l'ordine", delega: "Affida compiti al team", migliora_prompt: "Migliora i prompt",
+  chiudi_segnalazione: "Chiude le segnalazioni", gestisci_routine: "Gestisce le routine", stato_sistema: "Controlla lo stato",
+  fattura_incassata: "Segna le fatture incassate", proponi_idea: "Propone funzioni nuove", regola_categoria: "Impara le categorie di spesa",
+};
+const FRASI_ATTIVITA = {
+  lavoro: "Ha ricevuto un compito", risposta: "Ha risposto", errore: "Ha avuto un errore", segnalazione: "Ha segnalato un problema",
+  "prompt migliorato": "Ha migliorato un prompt", "richiesta approvazione": "Ha chiesto il tuo ok", "proposta acquisto": "Ha proposto un acquisto",
+  "idea proposta": "Ha proposto una funzione nuova", "proposta modifica grande": "Ha proposto una modifica grande",
+  "fattura archiviata": "Ha archiviato una fattura", "fattura incassata": "Ha segnato una fattura incassata",
+  "regola categoria": "Ha imparato una categoria", "ordine pronto": "Ha preparato un ordine", routine: "Ha eseguito una routine",
+  "routine creata": "Ha creato una routine", "routine modificata": "Ha modificato una routine",
+};
+const durata = (da) => { const s = Math.max(0, Math.floor(Date.now() / 1000 - da)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`; };
+
+let agenteAperto = null, timerAgente = null;
+
+function disegnaAgente(d) {
+  const lavora = !!d.in_corso;
+  $("ag-avatar").classList.toggle("lavora", lavora);
+  $("ag-emoji").textContent = ICONE_AGENTE[d.nome] || "🤖";
+  $("dlg-titolo").textContent = d.titolo; $("dlg-descr").textContent = d.descrizione;
+  const ora = $("ag-ora"); ora.classList.toggle("lavora", lavora);
+  const ultima = d.attivita[0];
+  svuota(ora,
+    h("b", null, lavora ? "Sta lavorando adesso" : "Adesso"),
+    lavora
+      ? [h("span", null, d.in_corso.cosa), h("small", { class: "meta puntini" }, `da ${durata(d.in_corso.da)}`)]
+      : [h("span", null, "In attesa di un compito."), ultima ? h("small", { class: "meta" }, `Ultima attività: ${quando(ultima.ts)}`) : null]);
+  svuota($("ag-storia"), d.attivita.length ? d.attivita.map((a) =>
+    h("div", { class: "fatto" + (a.azione === "errore" ? " errore" : "") },
+      (FRASI_ATTIVITA[a.azione] || a.azione) + (a.dettaglio ? `: ${a.dettaglio}` : ""),
+      h("small", null, quando(a.ts)))) : h("div", { class: "meta fatto" }, "Ancora nessuna attività."));
+  svuota($("ag-strumenti"), d.strumenti.map((t) => h("span", { class: "tag" }, NOMI_STRUMENTI[t] || t)));
+  $("ag-segn").hidden = !d.segnalazioni.length;
+  svuota($("ag-segn-lista"), d.segnalazioni.map((x) => h("div", { class: "voce" }, h("span", null, x.problema), h("span", { class: "meta" }, quando(x.ts)))));
+  $("dlg-prompt").textContent = d.prompt;
+  svuota($("dlg-migl"), d.miglioramenti.map((m) => h("div", { class: "voce" }, h("span", null, m.motivo), h("span", { class: "tag" }, m.stato.replace("_", " ")))));
+}
+
+async function ricaricaAgente() {
+  if (!agenteAperto) return;
+  try { disegnaAgente(await api("/api/agenti/" + agenteAperto)); } catch (e) { /* si riprova al prossimo giro */ }
+}
+
 async function apriAgente(a) {
   agenteAperto = a.nome;
-  $("dlg-titolo").textContent = a.titolo; $("dlg-descr").textContent = a.descrizione;
-  $("dlg-prompt").textContent = "Carico…"; svuota($("dlg-migl"));
+  disegnaAgente({ nome: a.nome, titolo: a.titolo, descrizione: a.descrizione, in_corso: a.in_corso, attivita: [], strumenti: [],
+                  segnalazioni: [], prompt: "Carico…", miglioramenti: [] });
   $("dlg").showModal();
-  try {
-    const d = await api("/api/agenti/" + a.nome);
-    $("dlg-prompt").textContent = d.prompt;
-    svuota($("dlg-migl"), d.miglioramenti.map((m) => h("div", { class: "voce" },
-      h("span", null, m.motivo), h("span", { class: "tag" }, m.stato))));
-  } catch (e) { $("dlg-prompt").textContent = e.message; }
+  await ricaricaAgente();
+  clearInterval(timerAgente);
+  timerAgente = setInterval(ricaricaAgente, 3000);  // il popup resta vivo mentre è aperto
 }
+$("dlg").addEventListener("close", () => { clearInterval(timerAgente); agenteAperto = null; });
+
 $("form-feedback").addEventListener("submit", async (e) => {
   e.preventDefault();
   const testo = $("fb-testo").value.trim();
