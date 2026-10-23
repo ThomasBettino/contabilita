@@ -40,5 +40,6 @@ Per lasciarla attiva in background: `nohup sh scripts/ada.sh > ~/ada.log 2>&1 &`
 - Database e prompt di Ada stanno in `~/ada`, i movimenti in `~/movimenti.db`: fuori dal repo, mai su GitHub.
 
 ## Cosa fa oggi e cosa no
-Funziona: chat con Ada, team di 6 assistenti, delega, ciclo di miglioramento dei prompt, approvazioni, riepilogo spese dai movimenti Revolut.
-Non ancora collegati: Gmail, Calendario, WhatsApp, controllo dello schermo, fatture. Ada lo sa e non finge di usarli.
+Funziona: chat con Ada, team di 7 assistenti (con Acquisti), delega, ciclo di miglioramento dei prompt, approvazioni, riepilogo spese dai movimenti Revolut.
+Controllo del telefono (ricerca e acquisti): richiede la configurazione in `docs/TELEFONO.md`.
+Non ancora collegati come strumenti propri: Gmail, Calendario, WhatsApp, fatture (Ada può usarli solo attraverso lo schermo, quando il telefono è collegato). Ada lo sa e non finge di usarli.

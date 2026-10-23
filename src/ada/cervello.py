@@ -17,7 +17,9 @@ MAX_AGGIUNTA = 600         # caratteri aggiunti oltre i quali è "grande"
 MAX_PICCOLE_24H = 3        # oltre, serve l'ok: argine contro la deriva dei prompt
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
-NON ANCORA COLLEGATI: Gmail, Calendario, WhatsApp, controllo dello schermo del telefono, documenti e fatture. Non fingere di usarli: se servono, dillo all'utente e proponi il passo per collegarli."""
+NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
+TELEFONO_SI = "TELEFONO: collegato. Puoi guardare e usare lo schermo con gli strumenti telefono_*. Le app finanziarie sono protette e il tasto finale di acquisto/pagamento lo preme sempre l'utente."
+TELEFONO_NO = "TELEFONO: NON collegato (manca il debug wireless, vedi docs/TELEFONO.md). Non puoi usare lo schermo: dillo all'utente se serve."
 
 
 def _tool(nome, descrizione, proprieta, obbligatori):
@@ -44,8 +46,34 @@ T_MIGLIORA = _tool("migliora_prompt",
 T_CHIUDI = _tool("chiudi_segnalazione", "Chiude una segnalazione dopo averla gestita.",
                  {"id": {"type": "integer"}, "esito": _S}, ["id", "esito"])
 
+_N = {"type": "integer"}
+T_SCHERMO = _tool("telefono_schermo", "Guarda lo schermo del telefono: elenco numerato degli elementi visibili.", {}, [])
+T_TOCCA = _tool("telefono_tocca", "Tocca un elemento dello schermo (numero preso da telefono_schermo). Restituisce la nuova schermata.",
+                {"id": _N}, ["id"])
+T_SCRIVI = _tool("telefono_scrivi", "Scrive in un campo di testo (solo caratteri senza accenti).", {"id": _N, "testo": _S}, ["id", "testo"])
+T_SCORRI = _tool("telefono_scorri", "Scorre la pagina.", {"direzione": {"type": "string", "enum": ["giu", "su"]}}, ["direzione"])
+T_VAI = _tool("telefono_vai", "Tasto indietro o home.", {"azione": {"type": "string", "enum": ["indietro", "home"]}}, ["azione"])
+T_APRI = _tool("telefono_apri", "Apre un'app (amazon, chrome, whatsapp, gmail, calendario o nome pacchetto) oppure un indirizzo https.",
+               {"app": _S, "url": _S}, [])
+T_PROPONI = _tool("proponi_acquisto",
+                  "Mostra all'utente fino a 5 opzioni d'acquisto da confrontare. Usa solo dati letti davvero sullo schermo.",
+                  {"richiesta": _S, "opzioni": {"type": "array", "items": {"type": "object", "properties": {
+                      "nome": _S, "prezzo_totale": {"type": "number"}, "stelle": {"type": "number"},
+                      "recensioni": _N, "venditore": _S, "motivo": _S,
+                      "etichetta": {"type": "string", "enum": ["economica", "meglio_recensita", "consigliata", "altra"]}},
+                      "required": ["nome", "prezzo_totale"]}}}, ["richiesta", "opzioni"])
+T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata finale e ora tocca all'utente premere il tasto.",
+                 {"id": _N, "nota": _S}, ["id", "nota"])
+
+STRUMENTI_TELEFONO = [T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_SEGNALA, T_APPROVAZIONE]
-STRUMENTI_ADA = STRUMENTI_ASSISTENTI + [T_DELEGA, T_MIGLIORA, T_CHIUDI]
+STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
+STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI]
+GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
+
+
+def strumenti_di(chi):
+    return {"ada": STRUMENTI_ADA, "acquisti": STRUMENTI_ACQUISTI}.get(chi, STRUMENTI_ASSISTENTI)
 
 
 def classifica(vecchio: str, nuovo: str) -> str:
@@ -55,8 +83,8 @@ def classifica(vecchio: str, nuovo: str) -> str:
 
 
 class Ada:
-    def __init__(self, db, squadra, soldi, llm, max_giri=6):
-        self.db, self.squadra, self.soldi, self.llm, self.max_giri = db, squadra, soldi, llm, max_giri
+    def __init__(self, db, squadra, soldi, llm, mano=None, max_giri=6):
+        self.db, self.squadra, self.soldi, self.llm, self.mano, self.max_giri = db, squadra, soldi, llm, mano, max_giri
         self.lock = threading.Lock()
 
     # ---------- utilità ----------
@@ -66,7 +94,8 @@ class Ada:
 
     def _contesto(self, chi):
         aperte = self.db.tutti("SELECT id, agente, problema FROM segnalazioni WHERE stato='aperta' ORDER BY id LIMIT 10")
-        righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.", CAPACITA]
+        righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.", CAPACITA,
+                 TELEFONO_SI if self.mano and self.mano.disponibile() else TELEFONO_NO]
         if chi == "ada":
             righe.append("TEAM: " + "; ".join(f"{k} ({v[1]})" for k, v in AGENTI.items() if k != "ada"))
             if aperte:
@@ -77,7 +106,7 @@ class Ada:
     def _ciclo(self, chi, messaggi, strumenti):
         system = self.squadra.system(chi, self._contesto(chi))
         testo = ""
-        for _ in range(self.max_giri):
+        for _ in range(GIRI.get(chi, self.max_giri)):
             r = self.llm(system, messaggi, strumenti)
             blocchi = r.get("content", [])
             testo = "".join(b.get("text", "") for b in blocchi if b.get("type") == "text").strip()
@@ -91,8 +120,7 @@ class Ada:
         return testo or "Ho raggiunto il limite di passaggi per questa richiesta."
 
     def _esegui(self, chi, nome, args):
-        permessi = STRUMENTI_ADA if chi == "ada" else STRUMENTI_ASSISTENTI
-        if nome not in [t["name"] for t in permessi]:
+        if nome not in [t["name"] for t in strumenti_di(chi)]:
             return "Strumento non consentito."
         try:
             if nome == "riepilogo_spese":
@@ -105,6 +133,12 @@ class Ada:
                 return self._delega(args["agente"], args["compito"])
             if nome == "migliora_prompt":
                 return self._migliora(args["agente"], args["nuovo_prompt"], args["motivo"])
+            if nome.startswith("telefono_"):
+                return self._telefono(nome, args)
+            if nome == "proponi_acquisto":
+                return self._proponi_acquisto(chi, args)
+            if nome == "acquisto_pronto":
+                return self._pronto(int(args["id"]), str(args.get("nota", ""))[:300])
             if nome == "chiudi_segnalazione":
                 self.db.esegui("UPDATE segnalazioni SET stato='chiusa', esito=? WHERE id=?",
                                (str(args["esito"])[:300], int(args["id"])))
@@ -131,11 +165,13 @@ class Ada:
         self.log(chi, "richiesta approvazione", args["titolo"])
         return f"Richiesta #{cur.lastrowid} registrata: in attesa del via libera dell'utente. Non è stato eseguito nulla."
 
-    def risolvi(self, id_, esito):
+    def risolvi(self, id_, esito, opzione=None):
         a = self.db.uno("SELECT * FROM approvazioni WHERE id=? AND stato='in_attesa'", (id_,))
         if not a:
             raise ValueError("Approvazione non trovata o già risolta.")
         ok = esito == "approva"
+        if a["tipo"] == "acquisto" and ok:
+            return self._scegli(a, opzione)
         self.db.esegui("UPDATE approvazioni SET stato=?, risolta_ts=? WHERE id=?",
                        ("approvata" if ok else "rifiutata", int(time.time()), id_))
         if a["tipo"] == "prompt":
@@ -149,6 +185,103 @@ class Ada:
             self.log("ada", "pagamento approvato", f"{a['titolo']} (da eseguire a mano: Ada non muove denaro)")
         self.log("utente", "approvata" if ok else "rifiutata", a["titolo"])
         return self.db.uno("SELECT * FROM approvazioni WHERE id=?", (id_,))
+
+    # ---------- acquisti: scelta, autorizzazione, pronto, chiuso ----------
+    def _proponi_acquisto(self, chi, args):
+        opzioni = args.get("opzioni")
+        if not isinstance(opzioni, list) or not 1 <= len(opzioni) <= 5:
+            return "Servono da 1 a 5 opzioni."
+        pulite = []
+        for o in opzioni:
+            if not str(o.get("nome", "")).strip() or not isinstance(o.get("prezzo_totale"), (int, float)) or o["prezzo_totale"] < 0:
+                return "Ogni opzione richiede nome e prezzo_totale reale."
+            pulite.append({"nome": str(o["nome"])[:160], "prezzo_totale": round(float(o["prezzo_totale"]), 2),
+                           "stelle": o.get("stelle"), "recensioni": o.get("recensioni"),
+                           "venditore": str(o.get("venditore", ""))[:80], "motivo": str(o.get("motivo", ""))[:200],
+                           "etichetta": o.get("etichetta", "altra")})
+        det = json.dumps({"richiesta": str(args.get("richiesta", ""))[:200], "opzioni": pulite, "scelta": None,
+                          "richiesto_da": chi}, ensure_ascii=False)
+        cur = self.db.esegui("INSERT INTO approvazioni (ts, tipo, titolo, dettaglio) VALUES (?,?,?,?)",
+                             (int(time.time()), "acquisto", str(args.get("richiesta", "Acquisto"))[:200], det))
+        self.log(chi, "proposta acquisto", args.get("richiesta", ""))
+        return (f"Proposta #{cur.lastrowid} mostrata all'utente. Non toccare carrello o cassa: "
+                "aspetta che scelga un'opzione e ti autorizzi.")
+
+    def _scegli(self, a, opzione):
+        det = json.loads(a["dettaglio"])
+        if not isinstance(opzione, int) or not 0 <= opzione < len(det["opzioni"]):
+            raise ValueError("Scegli una delle opzioni proposte.")
+        det["scelta"] = opzione
+        self.db.esegui("UPDATE approvazioni SET stato='scelta', dettaglio=?, risolta_ts=? WHERE id=?",
+                       (json.dumps(det, ensure_ascii=False), int(time.time()), a["id"]))
+        self.log("utente", "scelta opzione", det["opzioni"][opzione]["nome"])
+        return self.db.uno("SELECT * FROM approvazioni WHERE id=?", (a["id"],))
+
+    def autorizza(self, id_):
+        """L'utente autorizza Ada a portare l'ordine alla schermata finale. Il tasto finale resta suo."""
+        a = self.db.uno("SELECT * FROM approvazioni WHERE id=? AND tipo='acquisto' AND stato='scelta'", (id_,))
+        if not a:
+            raise ValueError("Prima scegli un'opzione.")
+        self.db.esegui("UPDATE approvazioni SET stato='autorizzata', risolta_ts=? WHERE id=?", (int(time.time()), id_))
+        self.log("utente", "acquisto autorizzato", a["titolo"])
+        return self.db.uno("SELECT * FROM approvazioni WHERE id=?", (id_,))
+
+    def autorizzazione_attiva(self) -> bool:
+        return self.db.uno("SELECT 1 AS x FROM approvazioni WHERE tipo='acquisto' AND stato='autorizzata' "
+                           "AND risolta_ts>?", (int(time.time()) - 1800,)) is not None
+
+    def prepara_acquisto(self, id_):
+        a = self.db.uno("SELECT * FROM approvazioni WHERE id=? AND stato='autorizzata'", (id_,))
+        if not a:
+            return
+        det = json.loads(a["dettaglio"])
+        o = det["opzioni"][det["scelta"]]
+        compito = (f"L'utente ha scelto «{o['nome']}» ({o['prezzo_totale']:.2f} €, venditore {o['venditore'] or 'non indicato'}) "
+                   f"per la richiesta «{det['richiesta']}» e ti ha autorizzato a portare l'ordine alla schermata finale. "
+                   f"Apri il prodotto, aggiungilo al carrello, procedi fino alla schermata finale, controlla prezzo totale, "
+                   f"indirizzo e pagamento, poi FERMATI senza toccare il tasto finale e chiama acquisto_pronto con id {id_}.")
+        with self.lock:
+            risposta = self._delega("acquisti", compito)
+            self.db.esegui("INSERT INTO chat (ts, ruolo, testo) VALUES (?,?,?)",
+                           (int(time.time()), "ada", f"Acquisto «{o['nome']}»: {risposta}"))
+
+    def _pronto(self, id_, nota):
+        a = self.db.uno("SELECT * FROM approvazioni WHERE id=? AND stato='autorizzata'", (id_,))
+        if not a:
+            return "Acquisto non autorizzato o già pronto."
+        det = json.loads(a["dettaglio"])
+        det["nota"] = nota
+        self.db.esegui("UPDATE approvazioni SET stato='pronto', dettaglio=? WHERE id=?",
+                       (json.dumps(det, ensure_ascii=False), id_))
+        self.log("acquisti", "ordine pronto", "aspetta l'utente per il tasto finale")
+        return "Registrato: ora tocca all'utente premere il tasto finale. Non toccare nient'altro."
+
+    def chiudi_acquisto(self, id_, esito):
+        a = self.db.uno("SELECT * FROM approvazioni WHERE id=? AND tipo='acquisto' "
+                        "AND stato IN ('scelta','autorizzata','pronto')", (id_,))
+        if not a or esito not in ("comprato", "annullato"):
+            raise ValueError("Acquisto non trovato o esito non valido.")
+        self.db.esegui("UPDATE approvazioni SET stato=?, risolta_ts=? WHERE id=?",
+                       ("chiusa" if esito == "comprato" else "annullata", int(time.time()), id_))
+        self.log("utente", f"acquisto {esito}", a["titolo"])
+
+    def _telefono(self, nome, args):
+        if not self.mano:
+            return TELEFONO_NO
+        m = self.mano
+        if nome == "telefono_schermo":
+            return m.guarda()
+        if nome == "telefono_tocca":
+            return m.tocca(args["id"])
+        if nome == "telefono_scrivi":
+            return m.scrivi(args["id"], args["testo"])
+        if nome == "telefono_scorri":
+            return m.scorri(args["direzione"])
+        if nome == "telefono_vai":
+            return m.vai(args["azione"])
+        if nome == "telefono_apri":
+            return m.apri(args.get("app", ""), args.get("url", ""))
+        return "Strumento sconosciuto."
 
     # ---------- miglioramento dei prompt ----------
     def _migliora(self, agente, nuovo, motivo):
@@ -199,7 +332,7 @@ class Ada:
             return "Agente sconosciuto."
         self.log(agente, "lavoro", compito)
         try:
-            risposta = self._ciclo(agente, [{"role": "user", "content": compito}], STRUMENTI_ASSISTENTI)
+            risposta = self._ciclo(agente, [{"role": "user", "content": compito}], strumenti_di(agente))
         except ErroreLLM as e:
             self.log(agente, "errore", e)
             return f"L'assistente non ha risposto: {e}"

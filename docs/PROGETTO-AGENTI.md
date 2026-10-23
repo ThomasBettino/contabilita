@@ -17,6 +17,8 @@ Decisioni:
 
 - **Ada e l'hub (costruito):** app web in `app/` servita da `src/ada/server.py`. Ada è il capo; la chat è la sua interfaccia, le altre schede mostrano team, approvazioni, registro e soldi. I confini sono nel codice: i pagamenti sono sempre solo richieste (nessun pagamento parte), le modifiche ai prompt si classificano per dimensione (piccole subito, grandi con ok), massimo 3 piccole al giorno per agente. I prompt vivi stanno in `~/ada/agenti/` con storico e annullamento nel database, al posto della cronologia git prevista all'inizio.
 
+- **Acquisti (costruito):** Ada cerca e confronta sul telefono (ADB, `src/telefono/`), mostra fino a 3 opzioni nell'app; l'utente sceglie e autorizza; Ada porta l'ordine alla schermata finale e si ferma; **il tasto finale lo preme sempre l'utente**. Il guardiano delle azioni sullo schermo sta nel codice: tasti d'acquisto e pagamento mai toccati, carrello e cassa solo con l'autorizzazione dell'utente (30 minuti), app finanziarie e password non lette né toccate, tasto di stop immediato.
+
 Dove questa sezione contraddice quelle sotto, vale questa.
 
 

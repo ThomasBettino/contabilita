@@ -98,6 +98,12 @@ function disegna(s) {
     : s.approvazioni.length ? `${s.approvazioni.length} cose aspettano te`
     : s.segnalazioni_aperte ? `${s.segnalazioni_aperte} problemi da sistemare`
     : "Tutto sotto controllo";
+  const tel = s.telefono || {};
+  const stop = $("btn-stop");
+  stop.hidden = !tel.collegato;
+  stop.className = "stop" + (tel.fermo ? " riattiva" : "");
+  stop.textContent = tel.fermo ? "▶" : "⏹";
+  stop.title = stop.ariaLabel = tel.fermo ? "Riattiva il telefono" : "Ferma subito il telefono";
   const n = s.approvazioni.length;
   $("badge-appr").hidden = $("pill-appr").hidden = !n;
   $("badge-appr").textContent = n;
@@ -118,7 +124,52 @@ function disegna(s) {
   disegnaSoldi(s.soldi);
 }
 
+const stelle = (n) => (n == null ? "" : "★ " + String(n).replace(".", ","));
+const migliaia = (n) => (n == null ? "" : new Intl.NumberFormat("it-IT").format(n) + " recensioni");
+
+function cartaOpzione(o, i, scelta, azione) {
+  const etic = { economica: "La più economica", meglio_recensita: "La meglio recensita", consigliata: "Consigliata" }[o.etichetta];
+  return h("div", { class: "opz" + (scelta === i ? " scelta" : "") },
+    etic ? h("div", null, h("span", { class: "tag ok" }, etic)) : null,
+    h("b", null, o.nome),
+    h("div", { class: "riga" }, h("span", { class: "prezzo" }, eur(o.prezzo_totale)),
+      h("span", { class: "meta" }, [stelle(o.stelle), migliaia(o.recensioni)].filter(Boolean).join(" · "))),
+    o.venditore ? h("span", { class: "meta" }, "Venduto da " + o.venditore) : null,
+    o.motivo ? h("span", null, o.motivo) : null,
+    azione ? h("div", { class: "azioni" }, azione) : null);
+}
+
+function cartaAcquisto(a) {
+  const d = a.dettaglio || {}, opz = d.opzioni || [];
+  const chiama = (path, dati, msg) => async () => {
+    try { await api(path, dati); toast(msg); aggiorna(); } catch (e) { toast(e.message); }
+  };
+  const annulla = h("button", { class: "no-btn", type: "button", onclick: chiama(`/api/approvazioni/${a.id}/chiudi`, { esito: "annullato" }, "Acquisto annullato") }, "Annulla");
+  let corpo;
+  if (a.stato === "in_attesa") {
+    corpo = [h("div", { class: "opzioni" }, opz.map((o, i) => cartaOpzione(o, i, null,
+        h("button", { class: "ok-btn", type: "button", onclick: chiama("/api/approvazioni/" + a.id, { esito: "approva", opzione: i }, "Opzione scelta") }, "Scelgo questa")))),
+      h("div", { class: "azioni" }, h("button", { class: "no-btn", type: "button", onclick: chiama("/api/approvazioni/" + a.id, { esito: "rifiuta" }, "Nessuna scelta") }, "Nessuna di queste"))];
+  } else {
+    const o = opz[d.scelta];
+    corpo = [h("div", { class: "opzioni" }, o ? cartaOpzione(o, d.scelta, d.scelta) : null)];
+    if (a.stato === "scelta") corpo.push(
+      h("div", { class: "attenzione" }, "Se autorizzi, Ada porta l'ordine alla schermata finale e si ferma. L'ultimo tasto lo premi tu."),
+      h("div", { class: "azioni" },
+        h("button", { class: "ok-btn", type: "button", onclick: chiama(`/api/approvazioni/${a.id}/autorizza`, {}, "Autorizzato: Ada ci lavora") }, "Autorizza Ada a preparare l'ordine"), annulla));
+    else if (a.stato === "autorizzata") corpo.push(h("div", { class: "lavoro" }, "Ada sta preparando l'ordine sul telefono…"), h("div", { class: "azioni" }, annulla));
+    else if (a.stato === "pronto") corpo.push(
+      h("div", { class: "attenzione" }, "Pronto: l'ordine è alla schermata finale sul telefono. Premi tu «Acquista ora». " + (d.nota || "")),
+      h("div", { class: "azioni" },
+        h("button", { class: "ok-btn", type: "button", onclick: chiama(`/api/approvazioni/${a.id}/chiudi`, { esito: "comprato" }, "Segnato come comprato") }, "Fatto, l'ho comprato"), annulla));
+  }
+  return h("div", { class: "voce" },
+    h("div", null, h("span", { class: "tag warn" }, "Acquisto")), h("b", null, a.titolo), corpo,
+    h("span", { class: "meta" }, quando(a.ts)));
+}
+
 function cartaApprovazione(a) {
+  if (a.tipo === "acquisto") return cartaAcquisto(a);
   const d = a.dettaglio || {};
   const decidi = (esito) => async () => {
     try { await api("/api/approvazioni/" + a.id, { esito }); toast(esito === "approva" ? "Approvato" : "Rifiutato"); aggiorna(); }
@@ -164,6 +215,12 @@ function disegnaSoldi(s) {
     h("span", null, m.controparte || "(senza nome)", h("br"), h("span", { class: "meta" }, m.quando)),
     h("span", { class: "importo " + (m.importo < 0 ? "neg" : "pos") }, eur(m.importo)))));
 }
+
+$("btn-stop").addEventListener("click", async () => {
+  const ferma = !$("btn-stop").classList.contains("riattiva");
+  try { await api("/api/telefono", { fermo: ferma }); toast(ferma ? "Telefono fermato: Ada non tocca più nulla" : "Telefono riattivato"); aggiorna(); }
+  catch (e) { toast(e.message); }
+});
 
 /* ---------- dettaglio agente ---------- */
 let agenteAperto = null;

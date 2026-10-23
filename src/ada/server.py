@@ -9,6 +9,7 @@ import mimetypes
 import os
 import re
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,6 +19,8 @@ from .cervello import Ada
 from .db import DB, casa
 from .llm import Claude
 from .soldi import Soldi
+from ..telefono.adb import Adb
+from ..telefono.mano import Mano
 
 WEB = Path(__file__).resolve().parents[2] / "app"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
@@ -42,12 +45,13 @@ class Contesto:
                 "versioni": self.db.uno(
                     "SELECT COUNT(*) AS n FROM miglioramenti WHERE agente=? AND stato='applicato'", (nome,))["n"],
             })
-        appr = self.db.tutti("SELECT * FROM approvazioni WHERE stato='in_attesa' ORDER BY id DESC")
+        appr = self.db.tutti("SELECT * FROM approvazioni WHERE stato IN ('in_attesa','scelta','autorizzata','pronto') ORDER BY id DESC")
         for a in appr:
             a["dettaglio"] = json.loads(a["dettaglio"] or "{}")
         migl = self.db.tutti("SELECT id, ts, agente, motivo, tipo, stato FROM miglioramenti ORDER BY id DESC LIMIT 20")
         return {
             "ada": {"cervello": self.ada.llm.disponibile, "modello": getattr(self.ada.llm, "modello", "")},
+            "telefono": self.ada.mano.stato() if self.ada.mano else {"collegato": False, "fermo": False},
             "agenti": agenti, "approvazioni": appr, "miglioramenti": migl,
             "attivita": self.db.tutti("SELECT ts, agente, azione, dettaglio FROM attivita ORDER BY id DESC LIMIT 40"),
             "segnalazioni_aperte": self.db.uno("SELECT COUNT(*) AS n FROM segnalazioni WHERE stato='aperta'")["n"],
@@ -124,6 +128,12 @@ def crea_handler(ctx):
                 return {"messaggi": ctx.db.tutti("SELECT ts, ruolo, testo FROM chat ORDER BY id DESC LIMIT 50")[::-1]}
             if metodo == "POST" and path == "/api/chat":
                 return {"risposta": ctx.ada.chiacchiera(corpo.get("messaggio", ""))}
+            if path == "/api/telefono" and metodo == "POST":
+                if ctx.ada.mano is None:
+                    raise ValueError("Telefono non configurato.")
+                ctx.ada.mano.fermo = bool(corpo.get("fermo"))
+                ctx.ada.log("utente", "telefono fermato" if ctx.ada.mano.fermo else "telefono riattivato")
+                return ctx.ada.mano.stato()
             if metodo == "POST" and path == "/api/ciclo":
                 return {"risposta": ctx.ada.ciclo_miglioramento()}
             if metodo == "POST" and path == "/api/feedback":
@@ -145,7 +155,16 @@ def crea_handler(ctx):
             if metodo == "POST" and m:
                 if corpo.get("esito") not in ("approva", "rifiuta"):
                     raise ValueError("esito deve essere approva o rifiuta.")
-                return ctx.ada.risolvi(int(m.group(1)), corpo["esito"])
+                return ctx.ada.risolvi(int(m.group(1)), corpo["esito"], corpo.get("opzione"))
+            m = re.fullmatch(r"/api/approvazioni/(\d+)/autorizza", path)
+            if metodo == "POST" and m:
+                r = ctx.ada.autorizza(int(m.group(1)))
+                threading.Thread(target=ctx.ada.prepara_acquisto, args=(int(m.group(1)),), daemon=True).start()
+                return r
+            m = re.fullmatch(r"/api/approvazioni/(\d+)/chiudi", path)
+            if metodo == "POST" and m:
+                ctx.ada.chiudi_acquisto(int(m.group(1)), corpo.get("esito"))
+                return {"ok": True}
             m = re.fullmatch(r"/api/miglioramenti/(\d+)/annulla", path)
             if metodo == "POST" and m:
                 ctx.ada.annulla(int(m.group(1)))
@@ -165,6 +184,8 @@ def costruisci(llm=None, home=None, movimenti=None, token=None):
     db, squadra = DB(home / "ada.db"), Squadra(home)
     soldi = Soldi(movimenti or os.environ.get("ADA_MOVIMENTI") or Path.home() / "movimenti.db")
     ada = Ada(db, squadra, soldi, llm or Claude())
+    ada.mano = Mano(Adb(seriale=os.environ.get("ADA_ADB_SERIALE") or None),
+                    autorizzato=ada.autorizzazione_attiva, log=ada.log)
     return Contesto(ada, db, squadra, soldi, os.environ.get("ADA_TOKEN", "") if token is None else token)
 
 
