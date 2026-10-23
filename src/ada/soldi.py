@@ -17,8 +17,14 @@ CATEGORIE = [
 ]
 
 
-def categoria(controparte: str) -> str:
+NOMI_CATEGORIE = [nome for nome, _ in CATEGORIE] + ["Altro"]
+
+
+def categoria(controparte: str, extra=None) -> str:
     c = (controparte or "").lower()
+    for parola, nome in (extra or {}).items():  # regole imparate da Ada: hanno la precedenza
+        if parola in c:
+            return nome
     for nome, parole in CATEGORIE:
         if any(p in c for p in parole):
             return nome
@@ -28,6 +34,7 @@ def categoria(controparte: str) -> str:
 class Soldi:
     def __init__(self, percorso):
         self.percorso = Path(percorso)
+        self.regole = {}  # parola -> categoria, caricate da Ada
 
     def _righe(self, mese):
         if not self.percorso.exists():
@@ -63,16 +70,19 @@ class Soldi:
         righe = self._righe(mese)
         entrate = round(sum(r[1] for r in righe if r[1] > 0), 2)
         uscite = round(-sum(r[1] for r in righe if r[1] < 0), 2)
-        cat, esercenti = {}, {}
+        cat, esercenti, altro = {}, {}, {}
         for _, imp, c in righe:
             if imp < 0:
-                cat[categoria(c)] = cat.get(categoria(c), 0) - imp
+                k = categoria(c, self.regole)
+                cat[k] = cat.get(k, 0) - imp
+                if k == "Altro":
+                    altro[c or "(senza nome)"] = altro.get(c or "(senza nome)", 0) - imp
                 esercenti[c or "(senza nome)"] = esercenti.get(c or "(senza nome)", 0) - imp
         ordina = lambda d: [{"nome": k, "totale": round(v, 2)} for k, v in sorted(d.items(), key=lambda x: -x[1])]
         return {
             "periodo": mese or "sempre", "movimenti": len(righe), "entrate": entrate, "uscite": uscite,
             "saldo": round(entrate - uscite, 2), "per_categoria": ordina(cat),
-            "top_esercenti": ordina(esercenti)[:8],
+            "top_esercenti": ordina(esercenti)[:8], "non_categorizzati": ordina(altro)[:6],
             "ultimi": [{"quando": str(q), "importo": i, "controparte": c} for q, i, c in righe[:8]],
         }
 
@@ -86,4 +96,7 @@ class Soldi:
         righe += [f"- {c['nome']}: {c['totale']:.2f} €" for c in r["per_categoria"]]
         righe.append("Esercenti più costosi:")
         righe += [f"- {e['nome']}: {e['totale']:.2f} €" for e in r["top_esercenti"][:5]]
+        if r["non_categorizzati"]:
+            righe.append("Senza categoria (finiti in Altro): " + ", ".join(
+                f"{e['nome']} {e['totale']:.2f} €" for e in r["non_categorizzati"]))
         return "\n".join(righe)

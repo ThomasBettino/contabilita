@@ -11,8 +11,9 @@ import threading
 import time
 
 from .agenti import AGENTI
+from .soldi import NOMI_CATEGORIE
 from .llm import ErroreLLM
-from .pianificatore import prossima_esecuzione
+from .pianificatore import PREDEFINITE, prossima_esecuzione
 
 MAX_PROMPT = 8000
 SOGLIA_SIMILARITA = 0.85   # sotto questa, la modifica è "grande"
@@ -22,6 +23,11 @@ MAX_ROUTINE = 8            # routine create da Ada
 MIN_INTERVALLO = 30        # minuti: argine ai costi
 LIMITE_TOKEN = int(os.environ.get("ADA_LIMITE_TOKEN", "400000"))  # tetto giornaliero per i lavori automatici
 PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
+MAX_REGOLE = 80
+MAX_IDEE_APERTE = 6
+
+# Fissato nel codice (non in un prompt che Ada può riscrivere): il capo decide e agisce.
+MANDATO = """COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se una opzione è chiaramente la migliore, non elencarne tre."""
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese; la lettura delle notifiche non dipende dal collegamento dello schermo); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
@@ -41,6 +47,12 @@ T_FATTURE = _tool("riepilogo_fatture", "Riepilogo delle fatture P.IVA del mese (
                   {"mese": {"type": "string", "description": "AAAA-MM, default il mese corrente"}}, [])
 T_INCASSATA = _tool("fattura_incassata", "Segna una fattura come incassata nell'archivio (usa l'id mostrato da riepilogo_fatture).",
                     {"id": _S, "data": {"type": "string", "description": "AAAA-MM-GG, default oggi"}}, ["id"])
+T_IDEA = _tool("proponi_idea", "Proponi una funzione nuova per l'app che richiede codice. L'utente approva o rifiuta. Una sola idea nuova al giorno.",
+               {"titolo": _S, "descrizione": {"type": "string", "description": "Cosa farebbe, come lo vedrebbe l'utente (30-800 caratteri)"},
+                "motivo": {"type": "string", "description": "Perché serve, con un fatto osservato"}}, ["titolo", "descrizione", "motivo"])
+T_REGOLA = _tool("regola_categoria", "Insegna o toglie una regola: gli esercenti con questa parola vanno in quella categoria di spesa.",
+                 {"azione": {"type": "string", "enum": ["aggiungi", "rimuovi"]}, "parola": _S,
+                  "categoria": {"type": "string", "enum": NOMI_CATEGORIE}}, ["azione", "parola"])
 T_STATO = _tool("stato_sistema", "Cosa aspetta una decisione dell'utente, segnalazioni aperte, routine, ultime attività e consumo di oggi.", {}, [])
 T_SEGNALA = _tool("annota_segnalazione", "Annota un problema o una mancanza osservata in un assistente.",
                   {"agente": _S, "problema": _S}, ["agente", "problema"])
@@ -86,7 +98,7 @@ T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata fina
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_FATTURE, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
-STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA]
+STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA, T_IDEA, T_REGOLA]
 GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
 
 
@@ -107,6 +119,7 @@ class Ada:
         self.automatico = False   # vero durante una routine: niente schermo senza l'utente
         self.notifica = None      # funzione(titolo, testo, id) impostata dal server
         self.archivio = None      # archivio fatture P.IVA (src/ada/fatture.py)
+        self.soldi.regole = {r["parola"]: r["categoria"] for r in self.db.tutti("SELECT parola, categoria FROM regole_categoria")}
 
     # ---------- utilità ----------
     def avvisa(self, titolo, testo, id_="ada"):
@@ -147,7 +160,7 @@ class Ada:
 
     def _contesto(self, chi):
         aperte = self.db.tutti("SELECT id, agente, problema FROM segnalazioni WHERE stato='aperta' ORDER BY id LIMIT 10")
-        righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.", CAPACITA,
+        righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.", MANDATO if chi == "ada" else "", CAPACITA,
                  TELEFONO_SI if self.mano and self.mano.disponibile() else TELEFONO_NO]
         if chi == "ada":
             routine = self.db.tutti("SELECT nome, ora, ogni_min, attiva FROM routine ORDER BY id")
@@ -202,6 +215,10 @@ class Ada:
                 return self._routine(args)
             if nome == "stato_sistema":
                 return self._stato_sistema()
+            if nome == "proponi_idea":
+                return self._proponi_idea(args)
+            if nome == "regola_categoria":
+                return self._regola_categoria(args)
             if nome == "riepilogo_fatture":
                 return self.archivio.testo(args.get("mese")) if self.archivio else "Archivio fatture non configurato."
             if nome == "fattura_incassata":
@@ -250,6 +267,9 @@ class Ada:
                 self._applica(mid)
             else:
                 self.db.esegui("UPDATE miglioramenti SET stato='rifiutato' WHERE id=?", (mid,))
+        elif a["tipo"] == "idea":
+            self.db.esegui("UPDATE idee SET stato=?, ts_stato=? WHERE id=?",
+                           ("approvata" if ok else "rifiutata", int(time.time()), json.loads(a["dettaglio"])["idea_id"]))
         elif a["tipo"] == "incasso":
             if ok and self.archivio:
                 self.archivio.segna_incassata(json.loads(a["dettaglio"])["fattura_id"], da="utente")
@@ -517,8 +537,67 @@ class Ada:
         righe += [f"SEGNALAZIONI APERTE: {len(seg)}"] + [f"- #{s['id']} {s['agente']}: {s['problema']}" for s in seg]
         righe += ["ROUTINE:"] + [f"- {r['nome']} ({'attiva' if r['attiva'] else 'spenta'}), ultima: {r['esito'] or 'mai eseguita'}"
                                  for r in rou]
+        idee = self.db.tutti("SELECT titolo, stato FROM idee WHERE ts>? OR stato IN ('proposta','approvata') ORDER BY id DESC LIMIT 12",
+                             (ora - 30 * 86400,))
+        righe += ["IDEE (ultimi 30 giorni e aperte):"] + [f"- {i['titolo']} [{i['stato']}]" for i in idee]
+        attivita = self.db.tutti("SELECT ts, agente, azione, dettaglio FROM attivita ORDER BY id DESC LIMIT 15")
+        righe += ["ATTIVITÀ RECENTI (errori compresi):"] + [
+            f"- {time.strftime('%d/%m %H:%M', time.localtime(a['ts']))} {a['agente']}: {a['azione']} {a['dettaglio'] or ''}"[:140]
+            for a in attivita]
         righe.append(f"CONSUMO OGGI: {c['totale']} token in totale, di cui {c['automatici']} nei lavori automatici (tetto {c['limite']})")
         return "\n".join(righe)
+
+    def _proponi_idea(self, args):
+        titolo, desc, motivo = (str(args.get(k, "")).strip() for k in ("titolo", "descrizione", "motivo"))
+        if not 8 <= len(titolo) <= 100 or not 30 <= len(desc) <= 800 or len(motivo) < 10:
+            return "Servono titolo (8-100 caratteri), descrizione (30-800) e un motivo concreto."
+        ora = int(time.time())
+        lt = time.localtime(ora)
+        inizio_giorno = int(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
+        oggi = self.db.uno("SELECT titolo FROM idee WHERE ts>=?", (inizio_giorno,))
+        if oggi:
+            return f"Una idea nuova al giorno: oggi hai già proposto «{oggi['titolo']}»."
+        if self.db.uno("SELECT COUNT(*) AS n FROM idee WHERE stato IN ('proposta','approvata')")["n"] >= MAX_IDEE_APERTE:
+            return "Ci sono già troppe idee aperte: aspetta che l'utente ne chiuda qualcuna."
+        for i in self.db.tutti("SELECT titolo FROM idee WHERE ts>?", (ora - 60 * 86400,)):
+            if difflib.SequenceMatcher(None, i["titolo"].lower(), titolo.lower()).ratio() > 0.8:
+                return f"Idea già proposta: «{i['titolo']}»."
+        cur = self.db.esegui("INSERT INTO idee (ts, titolo, descrizione, motivo, ts_stato) VALUES (?,?,?,?,?)",
+                             (ora, titolo, desc, motivo[:300], ora))
+        det = json.dumps({"idea_id": cur.lastrowid, "testo": desc, "motivo": motivo[:300]}, ensure_ascii=False)
+        ap = self.db.esegui("INSERT INTO approvazioni (ts, tipo, titolo, dettaglio) VALUES (?,?,?,?)",
+                            (ora, "idea", f"Idea: {titolo}", det))
+        self.db.esegui("UPDATE idee SET approvazione_id=? WHERE id=?", (ap.lastrowid, cur.lastrowid))
+        self.log("ada", "idea proposta", titolo)
+        self._avvisa_attesa()
+        return f"Idea #{cur.lastrowid} proposta all'utente."
+
+    def idea_fatta(self, id_):
+        r = self.db.uno("SELECT titolo FROM idee WHERE id=? AND stato='approvata'", (id_,))
+        if not r:
+            raise ValueError("Idea non trovata o non approvata.")
+        self.db.esegui("UPDATE idee SET stato='fatta', ts_stato=? WHERE id=?", (int(time.time()), id_))
+        self.log("utente", "idea realizzata", r["titolo"])
+
+    def _regola_categoria(self, args):
+        parola = str(args.get("parola", "")).strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9 .&'-]{2,39}", parola):
+            return "Parola non valida (3-40 caratteri: lettere, numeri, spazi)."
+        if args.get("azione") == "rimuovi":
+            self.db.esegui("DELETE FROM regole_categoria WHERE parola=?", (parola,))
+            self.soldi.regole.pop(parola, None)
+            self.log("ada", "regola categoria rimossa", parola)
+            return f"Regola «{parola}» rimossa."
+        cat = args.get("categoria")
+        if cat not in NOMI_CATEGORIE:
+            return "Categoria non valida."
+        if parola not in self.soldi.regole and len(self.soldi.regole) >= MAX_REGOLE:
+            return f"Massimo {MAX_REGOLE} regole."
+        self.db.esegui("INSERT INTO regole_categoria (parola, categoria) VALUES (?,?) "
+                       "ON CONFLICT(parola) DO UPDATE SET categoria=excluded.categoria", (parola, cat))
+        self.soldi.regole[parola] = cat
+        self.log("ada", "regola categoria", f"{parola} → {cat}")
+        return f"D'ora in poi «{parola}» va in {cat}."
 
     def _routine(self, args):
         azione = args.get("azione")
@@ -547,8 +626,10 @@ class Ada:
             return "Ora non valida: usa HH:MM."
         if ogni and (not isinstance(ogni, int) or ogni < MIN_INTERVALLO):
             return f"Intervallo minimo: {MIN_INTERVALLO} minuti."
-        if azione == "crea" and self.db.uno("SELECT COUNT(*) AS n FROM routine WHERE tipo='ada' AND prompt IS NOT NULL "
-                                            "AND nome NOT IN ('riepilogo_sera')")["n"] >= MAX_ROUTINE:
+        di_sistema = [r["nome"] for r in PREDEFINITE]
+        if azione == "crea" and self.db.uno(
+                f"SELECT COUNT(*) AS n FROM routine WHERE tipo='ada' AND nome NOT IN ({','.join('?' * len(di_sistema))})",
+                di_sistema)["n"] >= MAX_ROUTINE:
             return f"Massimo {MAX_ROUTINE} routine create da te: disattivane una."
         prossima = prossima_esecuzione(ora, ogni, time.time())
         if azione == "crea":

@@ -23,6 +23,8 @@ Decisioni:
 
 - **Fatture P.IVA (costruito):** Ada si collega allo script Google di Contabilità Smart (che archivia già i Word mandati a Giulia), mostra l'archivio nell'hub, riconosce il bonifico del pagatore dalle notifiche Revolut, avvisa e segna quella fattura come incassata (annullabile). Vedi `docs/FATTURE.md`.
 
+- **Miglioria quotidiana (costruito):** routine alle 6:30. Ada applica da sola le migliorie nel perimetro sicuro (prompt, routine, regole di categoria) e propone al massimo una funzione nuova al giorno che richiede codice, con il tuo ok. Il mandato «decidi e agisci, non chiedere quale opzione scegliere» è fissato nel codice (`MANDATO` in `src/ada/cervello.py`). Ada non modifica il proprio codice: i confini di sicurezza sono lì.
+
 Dove questa sezione contraddice quelle sotto, vale questa.
 
 

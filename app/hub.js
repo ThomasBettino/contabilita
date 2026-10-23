@@ -152,6 +152,29 @@ function disegna(s) {
   disegnaSoldi(s.soldi);
   disegnaRoutine(s.routine || [], s.consumo);
   disegnaFatture(s.fatture || {});
+  disegnaIdee(s.idee || []);
+}
+
+const STATO_IDEA = { proposta: ["in attesa del tuo ok", "warn"], approvata: ["approvata: da realizzare", "ok"], fatta: ["realizzata", "ok"], rifiutata: ["rifiutata", "bad"] };
+
+function disegnaIdee(idee) {
+  svuota($("idee"), idee.length ? idee.map((i) => {
+    const [testo, colore] = STATO_IDEA[i.stato] || [i.stato, ""];
+    const copia = async () => {
+      try { await navigator.clipboard.writeText(i.brief); toast("Testo copiato: incollalo a chi sviluppa"); }
+      catch (e) { toast("Non riesco a copiare: apri l'idea e selezionala a mano"); }
+    };
+    const fatta = async () => {
+      try { await api(`/api/idee/${i.id}/fatta`, {}); toast("Segnata come realizzata"); aggiorna(); } catch (e) { toast(e.message); }
+    };
+    return h("div", { class: "voce" },
+      h("div", null, h("span", { class: "tag " + colore }, testo)),
+      h("b", null, i.titolo), h("span", null, i.descrizione),
+      h("span", { class: "meta" }, `Perché: ${i.motivo} · ${quando(i.ts)}`),
+      i.stato === "approvata" ? h("div", { class: "azioni" },
+        h("button", { class: "secondario", type: "button", onclick: copia }, "Copia il testo per lo sviluppo"),
+        h("button", { class: "secondario", type: "button", onclick: fatta }, "Fatta")) : null);
+  }) : h("div", { class: "vuoto" }, "Ancora nessuna idea: ogni mattina Ada ne valuta una nuova."));
 }
 
 const STATO_FATTURA = { inviata: "Mandata a Giulia", fatturata: "Fatturata · attesa bonifico", incassata: "Bonifico arrivato" };
@@ -296,7 +319,8 @@ function cartaApprovazione(a) {
     catch (e) { toast(e.message); }
   };
   return h("div", { class: "voce" },
-    h("div", null, h("span", { class: "tag " + (a.tipo === "pagamento" ? "bad" : "warn") }, a.tipo === "pagamento" ? "Soldi" : a.tipo === "prompt" ? "Modifica grande" : "Altro")),
+    h("div", null, h("span", { class: "tag " + (a.tipo === "pagamento" ? "bad" : "warn") },
+      { pagamento: "Soldi", prompt: "Modifica grande", idea: "Idea", incasso: "Incasso" }[a.tipo] || "Altro")),
     h("b", null, a.titolo),
     d.testo ? h("span", null, d.testo) : d.motivo ? h("span", null, d.motivo) : null,
     d.importo != null ? h("span", { class: "importo" }, eur(d.importo)) : null,

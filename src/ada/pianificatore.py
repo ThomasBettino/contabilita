@@ -19,6 +19,15 @@ PREDEFINITE = [
                 "segnalazioni sono aperte. Massimo 6 righe, numeri veri, al massimo una cosa da fare. Non parlare del "
                 "collegamento dello schermo del telefono: è normale che sia spento e non riguarda i movimenti. Se non c'è "
                 "niente di rilevante, dillo in una riga.")},
+    {"nome": "miglioria_quotidiana", "descrizione": "Ogni giorno una miglioria concreta all'app o al team.",
+     "tipo": "ada", "ora": "06:30", "ogni_min": None,
+     "prompt": ("Routine di miglioramento quotidiano: oggi l'app e il team devono migliorare di una cosa concreta. "
+                "1) Guarda stato_sistema (attività, errori, segnalazioni, idee già proposte) e riepilogo_spese (esercenti rimasti "
+                "senza categoria). 2) Scegli la miglioria più utile e a basso rischio. 3) Se è alla portata dei tuoi strumenti "
+                "(migliora_prompt, regola_categoria, gestisci_routine, chiudi_segnalazione) falla subito. 4) Se serve codice nuovo "
+                "e non hai già proposto un'idea oggi, usa proponi_idea con un motivo basato su un fatto osservato. 5) Non toccare "
+                "soldi, schermo o regole di sicurezza. Chiudi con 3-4 righe: cosa hai migliorato oggi e perché. Se davvero non "
+                "c'è nulla da migliorare, dillo in una riga senza inventare.")},
     {"nome": "fatture", "descrizione": "Aggiorna l'archivio fatture e riconosce i bonifici in arrivo sul conto.",
      "tipo": "codice", "ora": None, "ogni_min": 10, "prompt": None},
     {"nome": "miglioramento", "descrizione": "Rivede le segnalazioni aperte e migliora i prompt (solo se ce ne sono).",

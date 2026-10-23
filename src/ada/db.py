@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS routine (
   prossima INTEGER, ultima INTEGER, esito TEXT);
 CREATE TABLE IF NOT EXISTS consumi (
   giorno TEXT PRIMARY KEY, input INTEGER DEFAULT 0, output INTEGER DEFAULT 0, chiamate INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS idee (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, titolo TEXT, descrizione TEXT, motivo TEXT,
+  stato TEXT DEFAULT 'proposta', approvazione_id INTEGER, ts_stato INTEGER);
+CREATE TABLE IF NOT EXISTS regole_categoria (parola TEXT PRIMARY KEY, categoria TEXT);
 CREATE TABLE IF NOT EXISTS fatture (id TEXT PRIMARY KEY, dati TEXT);
 CREATE TABLE IF NOT EXISTS kv (chiave TEXT PRIMARY KEY, valore TEXT);
 CREATE TABLE IF NOT EXISTS movimenti_visti (chiave TEXT PRIMARY KEY);

@@ -36,6 +36,12 @@ class Contesto:
         self.ada, self.db, self.squadra, self.soldi, self.token, self.web = ada, db, squadra, soldi, token, web
         self.pian, self.segreti, self.nuovo_cliente = pian, segreti, ClienteScript
 
+    def idee_stato(self):
+        out = self.db.tutti("SELECT id, ts, titolo, descrizione, motivo, stato FROM idee ORDER BY id DESC LIMIT 15")
+        for i in out:
+            i["brief"] = brief_idea(i)
+        return out
+
     def fatture_stato(self):
         a = self.ada.archivio
         if not a or not a.configurato:
@@ -69,8 +75,17 @@ class Contesto:
             "soldi": self.soldi.riepilogo("mese"),
             "routine": self.pian.elenco() if self.pian else [],
             "fatture": self.fatture_stato(),
+            "idee": self.idee_stato(),
             "consumo": self.ada.consumo_oggi(),
         }
+
+
+def brief_idea(i) -> str:
+    """Testo pronto da dare a uno sviluppatore (o a Claude Code) per realizzare l'idea."""
+    return (f"Idea per l'app Ada (repository thomasbettino/contabilita, branch ccr-b35db874-occc4m).\n"
+            f"Titolo: {i['titolo']}\nCosa: {i['descrizione']}\nPerché: {i['motivo']}\n"
+            "Vincoli: non toccare i confini di sicurezza (src/telefono/guardiano.py, REGOLE in src/ada/agenti.py); "
+            "aggiungere test; testi in italiano; non aggiungere dipendenze.")
 
 
 def crea_handler(ctx):
@@ -178,6 +193,10 @@ def crea_handler(ctx):
                 except ErroreFatture as e:
                     raise ValueError(f"Script non raggiungibile: {e}")
                 return {"messaggio": msg}
+            m = re.fullmatch(r"/api/idee/(\d+)/fatta", path)
+            if metodo == "POST" and m:
+                ctx.ada.idea_fatta(int(m.group(1)))
+                return {"ok": True}
             m = re.fullmatch(r"/api/routine/(\d+)/esegui", path)
             if metodo == "POST" and m:
                 return {"esito": ctx.pian.esegui(int(m.group(1)), manuale=True)}
