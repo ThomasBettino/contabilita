@@ -17,6 +17,7 @@ from pathlib import Path
 from .agenti import AGENTI, Squadra
 from .cervello import Ada
 from .db import DB, casa
+from .fatture import Archivio, ClienteScript, Config, ErroreFatture
 from .llm import Claude
 from .notifica import Notifica
 from .pianificatore import Pianificatore
@@ -33,6 +34,12 @@ class Contesto:
     def __init__(self, ada, db, squadra, soldi, token="", web=WEB, pian=None):
         self.ada, self.db, self.squadra, self.soldi, self.token, self.web = ada, db, squadra, soldi, token, web
         self.pian = pian
+
+    def fatture_stato(self):
+        a = self.ada.archivio
+        if not a or not a.configurato:
+            return {"configurato": False, "riepilogo": None, "elenco": []}
+        return {"configurato": True, "riepilogo": a.riepilogo(), "elenco": a.elenco()}
 
     def stato(self):
         ora = int(time.time())
@@ -60,6 +67,7 @@ class Contesto:
             "segnalazioni_aperte": self.db.uno("SELECT COUNT(*) AS n FROM segnalazioni WHERE stato='aperta'")["n"],
             "soldi": self.soldi.riepilogo("mese"),
             "routine": self.pian.elenco() if self.pian else [],
+            "fatture": self.fatture_stato(),
             "consumo": self.ada.consumo_oggi(),
         }
 
@@ -133,6 +141,25 @@ def crea_handler(ctx):
                 return {"messaggi": ctx.db.tutti("SELECT ts, ruolo, testo FROM chat ORDER BY id DESC LIMIT 50")[::-1]}
             if metodo == "POST" and path == "/api/chat":
                 return {"risposta": ctx.ada.chiacchiera(corpo.get("messaggio", ""))}
+            if path == "/api/fatture/sincronizza" and metodo == "POST":
+                a = ctx.ada.archivio
+                if not a or not a.configurato:
+                    raise ValueError("Archivio non configurato: vedi docs/FATTURE.md.")
+                try:
+                    s = a.sincronizza()
+                    return {**s, "incassi": a.elabora_incassi()}
+                except ErroreFatture as e:
+                    raise ValueError(f"Script non raggiungibile: {e}")
+            m = re.fullmatch(r"/api/fatture/([^/]+)", path)
+            if metodo == "POST" and m:
+                a = ctx.ada.archivio
+                if not a or not a.configurato:
+                    raise ValueError("Archivio non configurato.")
+                try:
+                    msg = a.segna_incassata(m.group(1), da="utente") if corpo.get("incassata") else a.segna_non_incassata(m.group(1))
+                except ErroreFatture as e:
+                    raise ValueError(f"Script non raggiungibile: {e}")
+                return {"messaggio": msg}
             m = re.fullmatch(r"/api/routine/(\d+)/esegui", path)
             if metodo == "POST" and m:
                 return {"esito": ctx.pian.esegui(int(m.group(1)), manuale=True)}
@@ -209,6 +236,8 @@ def costruisci(llm=None, home=None, movimenti=None, token=None):
     db, squadra = DB(home / "ada.db"), Squadra(home)
     soldi = Soldi(movimenti or os.environ.get("ADA_MOVIMENTI") or Path.home() / "movimenti.db")
     ada = Ada(db, squadra, soldi, llm or Claude())
+    cfg = Config()
+    ada.archivio = Archivio(ada, ClienteScript(cfg.url, cfg.token), cfg)
     ada.mano = Mano(Adb(seriale=os.environ.get("ADA_ADB_SERIALE") or None),
                     autorizzato=ada.autorizzazione_attiva, log=ada.log)
     return Contesto(ada, db, squadra, soldi, os.environ.get("ADA_TOKEN", "") if token is None else token,

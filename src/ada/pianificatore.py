@@ -15,10 +15,12 @@ PREDEFINITE = [
     {"nome": "riepilogo_sera", "descrizione": "Riepilogo della giornata: spese, cose da decidere, miglioramenti.",
      "tipo": "ada", "ora": "21:00", "ogni_min": None,
      "prompt": ("Prepara il riepilogo della giornata per l'utente. Usa riepilogo_spese per i dati reali (indica anche "
-                "l'ora dell'ultimo movimento letto) e stato_sistema per sapere cosa aspetta una sua decisione e quali "
+                "l'ora dell'ultimo movimento letto), riepilogo_fatture per fatture e tasse da accantonare e stato_sistema per sapere cosa aspetta una sua decisione e quali "
                 "segnalazioni sono aperte. Massimo 6 righe, numeri veri, al massimo una cosa da fare. Non parlare del "
                 "collegamento dello schermo del telefono: è normale che sia spento e non riguarda i movimenti. Se non c'è "
                 "niente di rilevante, dillo in una riga.")},
+    {"nome": "fatture", "descrizione": "Aggiorna l'archivio fatture e riconosce i bonifici in arrivo sul conto.",
+     "tipo": "codice", "ora": None, "ogni_min": 10, "prompt": None},
     {"nome": "miglioramento", "descrizione": "Rivede le segnalazioni aperte e migliora i prompt (solo se ce ne sono).",
      "tipo": "codice", "ora": None, "ogni_min": 360, "prompt": None},
     {"nome": "promemoria_approvazioni", "descrizione": "Ti ricorda con una notifica le cose ferme in attesa di te.",
@@ -88,6 +90,18 @@ class Pianificatore:
         if self.ada.sopra_limite() and not manuale:
             return "Saltata: limite di consumo di oggi raggiunto."
         return self.ada.lavoro_proattivo(r["prompt"], r["nome"])
+
+    def _fatture(self, manuale):
+        from .fatture import ErroreFatture
+        a = getattr(self.ada, "archivio", None)
+        if not a or not a.configurato:
+            return "Non configurato: mancano ADA_FATTURE_URL e ADA_FATTURE_TOKEN."
+        try:
+            s = a.sincronizza()
+            inc = a.elabora_incassi()
+        except ErroreFatture as e:
+            return f"Non riesco a leggere l'archivio: {e}"
+        return f"Archivio: {s['totale']} fatture ({s['nuove']} nuove). {inc}"[:250]
 
     def _miglioramento(self, manuale):
         if not self.db.uno("SELECT 1 AS x FROM segnalazioni WHERE stato='aperta'"):

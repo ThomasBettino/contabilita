@@ -21,6 +21,8 @@ Decisioni:
 
 - **Ada proattiva (costruito):** pianificatore interno (`src/ada/pianificatore.py`) con routine a orari fissi, notifiche Termux generiche, tetto giornaliero di token per i lavori automatici, schermo mai usato in automatico, massimo 8 routine create da Ada con intervallo minimo di 30 minuti.
 
+- **Fatture P.IVA (costruito):** Ada si collega allo script Google di Contabilità Smart (che archivia già i Word mandati a Giulia), mostra l'archivio nell'hub, riconosce il bonifico del pagatore dalle notifiche Revolut, avvisa e segna quella fattura come incassata (annullabile). Vedi `docs/FATTURE.md`.
+
 Dove questa sezione contraddice quelle sotto, vale questa.
 
 

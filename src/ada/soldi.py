@@ -45,6 +45,19 @@ class Soldi:
         except sqlite3.Error:
             return []
 
+    def tutti(self):
+        """Tutti i movimenti con la loro chiave, dal più vecchio (serve ad abbinare i bonifici alle fatture)."""
+        if not self.percorso.exists():
+            return []
+        try:
+            db = sqlite3.connect(f"file:{self.percorso}?mode=ro", uri=True)
+            righe = db.execute("SELECT chiave, quando, importo, controparte, testo FROM movimenti "
+                               "ORDER BY CAST(quando AS TEXT)").fetchall()
+            db.close()
+        except sqlite3.Error:
+            return []
+        return [{"chiave": c, "quando": str(q), "importo": i, "controparte": cp, "testo": t} for c, q, i, cp, t in righe]
+
     def riepilogo(self, periodo="mese"):
         mese = time.strftime("%Y-%m") if periodo == "mese" else None
         righe = self._righe(mese)

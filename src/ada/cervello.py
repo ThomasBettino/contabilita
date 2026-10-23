@@ -23,7 +23,7 @@ MIN_INTERVALLO = 30        # minuti: argine ai costi
 LIMITE_TOKEN = int(os.environ.get("ADA_LIMITE_TOKEN", "400000"))  # tetto giornaliero per i lavori automatici
 PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
 
-CAPACITA = """CAPACITÀ COLLEGATE OGGI: leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese; la lettura delle notifiche non dipende dal collegamento dello schermo); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
+CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese; la lettura delle notifiche non dipende dal collegamento dello schermo); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
 TELEFONO_SI = "TELEFONO: collegato. Puoi guardare e usare lo schermo con gli strumenti telefono_*. Le app finanziarie sono protette e il tasto finale di acquisto/pagamento lo preme sempre l'utente."
 TELEFONO_NO = "TELEFONO: NON collegato (manca il debug wireless, vedi docs/TELEFONO.md). Non puoi usare lo schermo: dillo all'utente se serve."
@@ -37,6 +37,10 @@ def _tool(nome, descrizione, proprieta, obbligatori):
 _S = {"type": "string"}
 T_RIEPILOGO = _tool("riepilogo_spese", "Riepilogo di entrate, uscite e categorie dai movimenti Revolut.",
                     {"periodo": {"type": "string", "enum": ["mese", "sempre"]}}, [])
+T_FATTURE = _tool("riepilogo_fatture", "Riepilogo delle fatture P.IVA del mese (archivio): incassato, da incassare, tasse da accantonare.",
+                  {"mese": {"type": "string", "description": "AAAA-MM, default il mese corrente"}}, [])
+T_INCASSATA = _tool("fattura_incassata", "Segna una fattura come incassata nell'archivio (usa l'id mostrato da riepilogo_fatture).",
+                    {"id": _S, "data": {"type": "string", "description": "AAAA-MM-GG, default oggi"}}, ["id"])
 T_STATO = _tool("stato_sistema", "Cosa aspetta una decisione dell'utente, segnalazioni aperte, routine, ultime attività e consumo di oggi.", {}, [])
 T_SEGNALA = _tool("annota_segnalazione", "Annota un problema o una mancanza osservata in un assistente.",
                   {"agente": _S, "problema": _S}, ["agente", "problema"])
@@ -80,9 +84,9 @@ T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata fina
                  {"id": _N, "nota": _S}, ["id", "nota"])
 
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
-STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_SEGNALA, T_APPROVAZIONE]
+STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_FATTURE, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
-STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE, T_STATO]
+STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA]
 GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
 
 
@@ -102,6 +106,7 @@ class Ada:
         self.lock = threading.Lock()
         self.automatico = False   # vero durante una routine: niente schermo senza l'utente
         self.notifica = None      # funzione(titolo, testo, id) impostata dal server
+        self.archivio = None      # archivio fatture P.IVA (src/ada/fatture.py)
 
     # ---------- utilità ----------
     def avvisa(self, titolo, testo, id_="ada"):
@@ -187,6 +192,12 @@ class Ada:
                 return self._routine(args)
             if nome == "stato_sistema":
                 return self._stato_sistema()
+            if nome == "riepilogo_fatture":
+                return self.archivio.testo(args.get("mese")) if self.archivio else "Archivio fatture non configurato."
+            if nome == "fattura_incassata":
+                if not self.archivio:
+                    return "Archivio fatture non configurato."
+                return self.archivio.segna_incassata(args["id"], args.get("data"), da=chi)
             if nome == "chiudi_segnalazione":
                 self.db.esegui("UPDATE segnalazioni SET stato='chiusa', esito=? WHERE id=?",
                                (str(args["esito"])[:300], int(args["id"])))
@@ -229,6 +240,9 @@ class Ada:
                 self._applica(mid)
             else:
                 self.db.esegui("UPDATE miglioramenti SET stato='rifiutato' WHERE id=?", (mid,))
+        elif a["tipo"] == "incasso":
+            if ok and self.archivio:
+                self.archivio.segna_incassata(json.loads(a["dettaglio"])["fattura_id"], da="utente")
         elif a["tipo"] == "pagamento":
             # Nessun pagamento parte da qui: si registra l'ok e il pagamento resta a mano.
             self.log("ada", "pagamento approvato", f"{a['titolo']} (da eseguire a mano: Ada non muove denaro)")

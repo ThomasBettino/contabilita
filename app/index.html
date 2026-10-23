@@ -69,14 +69,27 @@
 
   <section id="v-soldi" class="vista" hidden>
     <h2>Soldi</h2>
-    <p class="nota" id="soldi-periodo"></p>
-    <div class="tessere" id="tessere"></div>
-    <h3>Uscite per categoria</h3>
-    <div class="barre" id="cat"></div>
-    <h3>Dove va di più</h3>
-    <div class="lista compatta" id="esercenti"></div>
-    <h3>Ultimi movimenti</h3>
-    <div class="lista compatta" id="ultimi"></div>
+    <div class="segmento" id="seg-soldi" role="tablist">
+      <button type="button" data-s="conto" class="on">Conto</button>
+      <button type="button" data-s="fatture">Fatture P.IVA</button>
+    </div>
+    <div id="soldi-conto" class="blocco">
+      <p class="nota" id="soldi-periodo"></p>
+      <div class="tessere" id="tessere"></div>
+      <h3>Uscite per categoria</h3>
+      <div class="barre" id="cat"></div>
+      <h3>Dove va di più</h3>
+      <div class="lista compatta" id="esercenti"></div>
+      <h3>Ultimi movimenti</h3>
+      <div class="lista compatta" id="ultimi"></div>
+    </div>
+    <div id="soldi-fatture" class="blocco" hidden>
+      <p class="nota" id="fatt-nota"></p>
+      <div class="tessere" id="fatt-tessere"></div>
+      <div class="riga-azioni"><button class="secondario" id="btn-sync-fatture" type="button">Sincronizza ora</button></div>
+      <h3>Archivio fatture</h3>
+      <div class="lista" id="fatt-lista"></div>
+    </div>
   </section>
 </main>
 

@@ -124,7 +124,56 @@ function disegna(s) {
     h("span", { class: "meta" }, quando(x.ts)))) : h("div", { class: "vuoto" }, "Nessuna attività registrata."));
   disegnaSoldi(s.soldi);
   disegnaRoutine(s.routine || [], s.consumo);
+  disegnaFatture(s.fatture || {});
 }
+
+const STATO_FATTURA = { inviata: "Mandata a Giulia", fatturata: "Fatturata · attesa bonifico", incassata: "Bonifico arrivato" };
+const soloHttps = (u) => typeof u === "string" && /^https:\/\//.test(u);
+
+function disegnaFatture(f) {
+  if (!f.configurato) {
+    $("fatt-nota").textContent = "Archivio non collegato. Serve l'indirizzo e il codice dello script Google: vedi docs/FATTURE.md.";
+    svuota($("fatt-tessere")); svuota($("fatt-lista")); $("btn-sync-fatture").hidden = true;
+    return;
+  }
+  $("btn-sync-fatture").hidden = false;
+  const r = f.riepilogo;
+  $("fatt-nota").textContent = r.fatture
+    ? `Mese ${r.mese} · ${r.fatture} fatture · imponibile ${eur(r.imponibile)}` + (r.scadute ? ` · ${r.scadute} in ritardo` : "")
+    : `Nessuna fattura nel mese ${r.mese}.`;
+  svuota($("fatt-tessere"),
+    [["Arrivato", r.incassato, "pos"], ["Da incassare", r.da_incassare, ""], ["Da accantonare", r.mancano, r.mancano > 0 ? "neg" : "pos"]]
+      .map(([t, v, c]) => h("div", { class: "tessera" }, h("small", null, t), h("b", { class: "importo " + c }, eur(v)))));
+  svuota($("fatt-lista"), f.elenco.length ? f.elenco.map((x) => {
+    const stato = x.scaduta ? `Scaduta da ${x.giorni_scaduta} gg` : (STATO_FATTURA[x.stato] || x.stato);
+    const incassata = x.stato === "incassata";
+    const alterna = async () => {
+      try { const j = await api("/api/fatture/" + encodeURIComponent(x.id), { incassata: !incassata }); toast(j.messaggio); aggiorna(); }
+      catch (e) { toast(e.message); }
+    };
+    return h("div", { class: "voce" },
+      h("div", null, h("span", { class: "tag " + (incassata ? "ok" : x.scaduta ? "bad" : "warn") }, stato)),
+      h("div", { class: "riga" }, h("b", null, `Fattura ${x.numero || "senza numero"}`), h("span", { class: "importo" }, eur(x.calc.bonifico))),
+      h("span", null, x.descrizione || ""),
+      h("span", { class: "meta" }, `${x.data || ""} · imponibile ${eur(x.calc.lordo)}` + (x.dataIncasso ? ` · bonifico arrivato il ${x.dataIncasso}` : " · a destra il bonifico atteso")),
+      x.daVerificare ? h("span", { class: "attenzione" }, "Da controllare: non tutti gli importi sono stati letti dal file Word.") : null,
+      h("div", null, soloHttps(x.pdfUrl) ? h("a", { href: x.pdfUrl, target: "_blank", rel: "noopener" }, "PDF") : null,
+        soloHttps(x.docxUrl) ? h("a", { href: x.docxUrl, target: "_blank", rel: "noopener" }, "File Word") : null),
+      h("div", { class: "azioni" }, h("button", { class: "secondario", type: "button", onclick: alterna }, incassata ? "Annulla incasso" : "Segna incassata")));
+  }) : h("div", { class: "vuoto" }, "L'archivio è vuoto: le fatture arrivano da sole quando mandi la mail a Giulia."));
+}
+
+$("seg-soldi").addEventListener("click", (e) => {
+  const v = e.target.dataset?.s; if (!v) return;
+  $("seg-soldi").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.target));
+  $("soldi-conto").hidden = v !== "conto"; $("soldi-fatture").hidden = v !== "fatture";
+});
+$("btn-sync-fatture").addEventListener("click", async (e) => {
+  e.target.disabled = true; toast("Aggiorno l'archivio…");
+  try { const j = await api("/api/fatture/sincronizza", {}); toast(`Archivio: ${j.totale} fatture (${j.nuove} nuove). ${j.incassi}`.slice(0, 140)); aggiorna(); caricaChat(); }
+  catch (err) { toast(err.message); }
+  finally { e.target.disabled = false; }
+});
 
 const quandoRoutine = (r) => r.ora ? `ogni giorno alle ${r.ora}`
   : r.ogni_min % 60 === 0 ? `ogni ${r.ogni_min / 60} ${r.ogni_min === 60 ? "ora" : "ore"}` : `ogni ${r.ogni_min} minuti`;
