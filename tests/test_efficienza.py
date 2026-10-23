@@ -71,7 +71,7 @@ class TestCosaDiceAdaDelConsumo(Base):
         c.db.esegui("INSERT INTO consumi VALUES (?,?,?,?)", (__import__("time").strftime("%Y-%m-%d"), 450000, 23000, 30))
         out = c.ada._esegui("ada", "stato_sistema", {})
         self.assertIn("473000 token in totale (la chat con l'utente non ha tetto e non va mai limitata)", out)
-        self.assertIn("lavori automatici 0 su un tetto di 400000", out)
+        self.assertIn("lavori automatici 0 su un tetto di 800000", out)
         self.assertIn("non limitare mai per quel motivo il lavoro che ti chiede l'utente", cervello.MANDATO)
 
 

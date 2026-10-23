@@ -10,7 +10,8 @@ function h(tag, attrs, ...figli) {
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === "class") el.className = v;
     else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v);
+    else if (v === false || v == null) continue;  // attributo booleano spento: non va scritto (disabled="false" disabiliterebbe)
+    else el.setAttribute(k, v === true ? "" : v);
   }
   for (const f of figli.flat()) if (f != null) el.append(f.nodeType ? f : document.createTextNode(String(f)));
   return el;
@@ -169,6 +170,9 @@ function disegna(s) {
     h("span", null, h("b", null, nome(x.agente)), " · ", x.azione, x.dettaglio ? " — " + x.dettaglio : ""),
     h("span", { class: "meta" }, quando(x.ts)))) : h("div", { class: "vuoto" }, "Nessuna attività registrata."));
   disegnaSoldi(s.soldi);
+  disegnaRitmo(s.ritmo || {}, s.token_attivo);
+  disegnaCollaudi(s.collaudi || []);
+  disegnaStudio(s.appunti || [], s.libri || []);
   disegnaRoutine(s.routine || [], s.consumo);
   disegnaFatture(s.fatture || {});
   disegnaIdee(s.idee || []);
@@ -282,6 +286,44 @@ $("btn-sync-fatture").addEventListener("click", async (e) => {
   catch (err) { toast(err.message); }
   finally { e.target.disabled = false; }
 });
+
+function disegnaRitmo(r, tokenAttivo) {
+  const opzioni = r.opzioni || {};
+  svuota($("ritmo"), Object.entries(opzioni).map(([k, o]) => h("button", {
+    type: "button", role: "tab", class: k === r.scelto ? "on" : "", "aria-selected": String(k === r.scelto), disabled: !tokenAttivo,
+    onclick: async () => {
+      if (k === r.scelto) return;
+      if (k === "intenso" && !confirm("Il ritmo intenso usa molti token: Ada lavora di continuo e il tetto giornaliero sale a 5 volte. Lo attivo?")) return;
+      try { await api("/api/ritmo", { ritmo: k }); toast("Ritmo: " + o.etichetta); aggiorna(); } catch (e) { toast(e.message); }
+    } }, o.etichetta)));
+  const scelto = opzioni[r.scelto];
+  $("ritmo-nota").textContent = !tokenAttivo ? "Per cambiare il ritmo serve prima un token di accesso: vedi docs/AVVIO.md."
+    : scelto ? scelto.descrizione : "";
+}
+
+function disegnaCollaudi(collaudi) {
+  svuota($("collaudi"), collaudi.length ? collaudi.map((c) => {
+    const colore = c.voto >= 8 ? "ok" : c.voto >= 6 ? "warn" : "bad";
+    return h("div", { class: "voce" },
+      h("div", null, h("span", { class: "tag " + colore }, `${c.voto}/10`), " ", h("span", { class: "tag" }, c.categoria)),
+      h("span", null, "«" + c.richiesta + "»"),
+      c.problemi.length ? h("ul", { class: "elenco" }, c.problemi.map((p) => h("li", null, p))) : h("span", { class: "meta" }, "Nessun problema trovato."),
+      h("details", null, h("summary", null, "Mostra il dialogo"), h("pre", { class: "trascrizione" }, c.trascrizione)),
+      h("span", { class: "meta" }, quando(c.ts)));
+  }) : h("div", { class: "vuoto" }, "Ancora nessun collaudo: il primo parte da solo, oppure usa «Esegui ora» sulla routine."));
+}
+
+function disegnaStudio(appunti, libri) {
+  $("libri-nota").textContent = libri.length
+    ? "Libri in lettura: " + libri.map((l) => `${l.nome} (${l.percentuale}%)`).join(" · ")
+    : "Nessun libro: copia file .txt, .md o .epub nella cartella ~/ada/libri e Ada li legge a pezzi. Le lezioni sono la sua conoscenza, non citazioni dai libri.";
+  svuota($("appunti"), appunti.length ? appunti.map((a) => h("div", { class: "voce" },
+    h("div", null, h("span", { class: "tag" }, a.tipo)),
+    h("b", null, a.titolo),
+    h("details", null, h("summary", null, "Leggi gli appunti"), h("pre", { class: "trascrizione" }, a.testo)),
+    h("span", { class: "meta" }, quando(a.ts))))
+    : h("div", { class: "vuoto" }, "Ancora nessun appunto."));
+}
 
 const quandoRoutine = (r) => r.ora ? `ogni giorno alle ${r.ora}`
   : r.ogni_min % 60 === 0 ? `ogni ${r.ogni_min / 60} ${r.ogni_min === 60 ? "ora" : "ore"}` : `ogni ${r.ogni_min} minuti`;
@@ -418,7 +460,7 @@ $("btn-stop").addEventListener("click", async () => {
 
 /* ---------- dettaglio agente ---------- */
 const ICONE_AGENTE = { ada: "✨", contabilita_piva: "🧾", contabilita_privata: "💳", quotidiano: "🗓️", sviluppo: "🛠️",
-  clienti_vendite: "🤝", acquisti: "🛒", revisore: "🔍" };
+  clienti_vendite: "🤝", acquisti: "🛒", revisore: "🔍", collaudatore: "🎭" };
 const NOMI_STRUMENTI = {
   riepilogo_spese: "Legge le spese", aggiungi_regola_prompt: "Aggiunge una regola a un prompt", riepilogo_fatture: "Legge le fatture", annota_segnalazione: "Annota i problemi",
   richiedi_approvazione: "Chiede il tuo ok", telefono_collega: "Collega lo schermo", telefono_schermo: "Guarda lo schermo",
@@ -435,6 +477,8 @@ const FRASI_ATTIVITA = {
   "fattura archiviata": "Ha archiviato una fattura", "fattura incassata": "Ha segnato una fattura incassata",
   "regola categoria": "Ha imparato una categoria", "ordine pronto": "Ha preparato un ordine", routine: "Ha eseguito una routine",
   "routine creata": "Ha creato una routine", "routine modificata": "Ha modificato una routine",
+  collaudo: "Ha fatto un collaudo", "appunti (lezione)": "Ha studiato una lezione", "appunti (lettura)": "Ha letto un pezzo di libro",
+  "ritmo di lavoro": "Ha scelto il ritmo di lavoro",
 };
 const durata = (da) => { const s = Math.max(0, Math.floor(Date.now() / 1000 - da)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`; };
 
@@ -456,7 +500,8 @@ function disegnaAgente(d) {
     h("div", { class: "fatto" + (a.azione === "errore" ? " errore" : "") },
       (FRASI_ATTIVITA[a.azione] || a.azione) + (a.dettaglio ? `: ${a.dettaglio}` : ""),
       h("small", null, quando(a.ts)))) : h("div", { class: "meta fatto" }, "Ancora nessuna attività."));
-  svuota($("ag-strumenti"), d.strumenti.map((t) => h("span", { class: "tag" }, NOMI_STRUMENTI[t] || t)));
+  svuota($("ag-strumenti"), d.strumenti.length ? d.strumenti.map((t) => h("span", { class: "tag" }, NOMI_STRUMENTI[t] || t))
+    : h("span", { class: "tag" }, "Parla soltanto: nessuno strumento"));
   $("ag-segn").hidden = !d.segnalazioni.length;
   svuota($("ag-segn-lista"), d.segnalazioni.map((x) => h("div", { class: "voce" }, h("span", null, x.problema), h("span", { class: "meta" }, quando(x.ts)))));
   $("dlg-prompt").textContent = d.prompt;

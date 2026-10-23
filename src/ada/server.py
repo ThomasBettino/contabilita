@@ -16,13 +16,15 @@ from pathlib import Path
 
 from .agenti import AGENTI, Squadra
 from .cervello import Ada, strumenti_di
+from .collaudo import Collaudo
+from .studio import Studio
 from .db import DB, casa
 from . import aggiornamento
 from .fatture import HOST_SCRIPT, Archivio, ClienteScript, Config, ErroreFatture
 from .segreti import Segreti
 from .llm import Claude
 from .notifica import Notifica
-from .pianificatore import Pianificatore
+from .pianificatore import RITMI, Pianificatore
 from .soldi import Soldi
 from ..telefono.adb import Adb
 from ..telefono.mano import Mano
@@ -43,6 +45,12 @@ class Contesto:
     def versione(self):
         self._versione = self._versione or aggiornamento.versione()
         return self._versione
+
+    def collaudi_stato(self):
+        out = self.db.tutti("SELECT id, ts, categoria, richiesta, trascrizione, voto, problemi FROM collaudi ORDER BY id DESC LIMIT 8")
+        for c in out:
+            c["problemi"] = json.loads(c["problemi"] or "[]")
+        return out
 
     def idee_stato(self):
         out = self.db.tutti("SELECT id, ts, titolo, descrizione, motivo, stato FROM idee ORDER BY id DESC LIMIT 15")
@@ -85,6 +93,11 @@ class Contesto:
             "routine": self.pian.elenco() if self.pian else [],
             "fatture": self.fatture_stato(),
             "idee": self.idee_stato(),
+            "ritmo": {"scelto": self.pian.ritmo() if self.pian else None,
+                      "opzioni": {k: {"etichetta": v["etichetta"], "descrizione": v["descrizione"]} for k, v in RITMI.items()}},
+            "collaudi": self.collaudi_stato(),
+            "appunti": self.db.tutti("SELECT id, ts, tipo, titolo, testo FROM appunti ORDER BY id DESC LIMIT 8"),
+            "libri": self.ada.studio.elenco_libri() if getattr(self.ada, "studio", None) else [],
             "token_attivo": bool(self.token),
             "versione": self.versione(),
             "consumo": self.ada.consumo_oggi(),
@@ -190,6 +203,7 @@ def crea_handler(ctx):
                     raise ValueError(f"Lo script non ha accettato indirizzo o codice ({e}).")
                 ctx.segreti.scrivi(fatture_url=url, fatture_token=tok)
                 ctx.ada.archivio.imposta(url, tok, cliente)
+                ctx.db.esegui("UPDATE routine SET attiva=1 WHERE nome='fatture'")  # Ada può averla spenta quando non c'era lo script
                 ctx.ada.log("utente", "archivio fatture collegato")
                 return ctx.ada.archivio.sincronizza()
             if path == "/api/fatture/sincronizza" and metodo == "POST":
@@ -211,6 +225,11 @@ def crea_handler(ctx):
                 except ErroreFatture as e:
                     raise ValueError(f"Script non raggiungibile: {e}")
                 return {"messaggio": msg}
+            if path == "/api/ritmo" and metodo == "POST":
+                if not ctx.token:  # cambia quanto si spende: mai senza token
+                    raise PermissionError("Per cambiare il ritmo di lavoro serve prima un token di accesso (ADA_TOKEN): vedi docs/AVVIO.md.")
+                ctx.pian.imposta_ritmo(str(corpo.get("ritmo", "")))
+                return {"scelto": ctx.pian.ritmo()}
             if path == "/api/aggiorna" and metodo == "POST":
                 if not ctx.token:  # cambia il programma che gira sul telefono: mai senza token
                     raise PermissionError("Per aggiornare dall'app serve prima un token di accesso (ADA_TOKEN): vedi docs/AVVIO.md.")
@@ -305,7 +324,13 @@ def costruisci(llm=None, home=None, movimenti=None, token=None):
     home.mkdir(parents=True, exist_ok=True)
     db, squadra = DB(home / "ada.db"), Squadra(home)
     soldi = Soldi(movimenti or os.environ.get("ADA_MOVIMENTI") or Path.home() / "movimenti.db")
-    ada = Ada(db, squadra, soldi, llm or Claude())
+    llm = llm or Claude()
+    ada = Ada(db, squadra, soldi, llm)
+    # collaudatore e giudice possono usare un modello più economico: parlano soltanto, non agiscono
+    economico = Claude(chiave=llm.chiave, modello=os.environ.get("ADA_MODEL_ECONOMICO") or "claude-haiku-5-5") \
+        if isinstance(llm, Claude) else llm
+    ada.collaudo = Collaudo(ada, economico)
+    ada.studio = Studio(ada, home / "libri")
     segreti = Segreti(home / "segreti.json")
     cfg = Config()
     salvati = segreti.leggi()

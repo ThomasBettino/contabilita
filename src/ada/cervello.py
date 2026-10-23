@@ -14,7 +14,7 @@ import time
 from .agenti import AGENTI
 from .soldi import NOMI_CATEGORIE
 from .llm import ErroreLLM
-from .pianificatore import PREDEFINITE, prossima_esecuzione
+from .pianificatore import PREDEFINITE, RITMI, prossima_esecuzione
 
 MAX_PROMPT = 8000
 SOGLIA_SIMILARITA = 0.85   # sotto questa, la modifica è "grande"
@@ -35,7 +35,7 @@ MAX_IDEE_APERTE = 6
 IDEE_APERTE = "('proposta','approvata')"
 
 # Fissato nel codice (non in un prompt che Ada può riscrivere): il capo decide e agisce.
-MANDATO = """COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Per correggere un prompt usa aggiungi_regola_prompt, una regola breve alla volta: è il modo più semplice e sicuro; migliora_prompt (riscrittura intera) solo se serve davvero. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se dici che fai qualcosa, chiama subito lo strumento: non promettere e basta. Il tetto di consumo riguarda solo le routine automatiche: non limitare mai per quel motivo il lavoro che ti chiede l'utente. Se una opzione è chiaramente la migliore, non elencarne tre."""
+MANDATO = """OBIETTIVO: costruire la migliore squadra possibile per gestire l'utente: ogni giorno più capace, più affidabile, più utile. Lavori sempre, non solo quando ti scrive: collaudi, studi, migliori. COME RAGIONI: da scienziato (ipotesi, prova, misura, correggi), da matematico (definisci con precisione, controlla i casi limite, rifai i conti), da grande venditore (ascolta il bisogno vero, proponi il passo successivo concreto). COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Per correggere un prompt usa aggiungi_regola_prompt, una regola breve alla volta: è il modo più semplice e sicuro; migliora_prompt (riscrittura intera) solo se serve davvero. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se dici che fai qualcosa, chiama subito lo strumento: non promettere e basta. Il tetto di consumo riguarda solo le routine automatiche: non limitare mai per quel motivo il lavoro che ti chiede l'utente. Se una opzione è chiaramente la migliore, non elencarne tre."""
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut letti dalle notifiche del telefono (riepilogo_spese; la lettura delle notifiche non dipende dal collegamento dello schermo); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
@@ -114,7 +114,12 @@ STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIOR
 GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
 
 
+STRUMENTI_STUDIO = [T_REGOLA_PROMPT, T_IDEA]  # durante lo studio Ada può solo annotare una regola o proporre un'idea
+
+
 def strumenti_di(chi):
+    if chi == "collaudatore":
+        return []  # parla soltanto: non agisce mai
     return {"ada": STRUMENTI_ADA, "acquisti": STRUMENTI_ACQUISTI}.get(chi, STRUMENTI_ASSISTENTI)
 
 
@@ -152,14 +157,15 @@ class Ada:
             except Exception as e:  # la notifica è un extra: non deve rompere il lavoro
                 self.log("sistema", "errore notifica", e)
 
-    def _conta(self, risposta):
+    def _conta(self, risposta, automatico=None):
         """Token pesati come costo: la parte letta dalla cache vale un decimo."""
+        automatico = self.automatico if automatico is None else automatico
         u = risposta.get("usage") or {}
         inp = int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0) \
             + int((u.get("cache_read_input_tokens") or 0) / 10)
         out = int(u.get("output_tokens") or 0)
         oggi = time.strftime("%Y-%m-%d")
-        for chiave in (oggi, "auto:" + oggi) if self.automatico else (oggi,):
+        for chiave in (oggi, "auto:" + oggi) if automatico else (oggi,):
             self.db.esegui("INSERT INTO consumi (giorno, input, output, chiamate) VALUES (?,?,?,1) "
                            "ON CONFLICT(giorno) DO UPDATE SET input=input+excluded.input, output=output+excluded.output, "
                            "chiamate=chiamate+1", (chiave, inp, out))
@@ -171,11 +177,17 @@ class Ada:
 
     def consumo_oggi(self):
         oggi = time.strftime("%Y-%m-%d")
-        return {**self._consumo(oggi), "automatici": self._consumo("auto:" + oggi)["totale"], "limite": LIMITE_TOKEN}
+        return {**self._consumo(oggi), "automatici": self._consumo("auto:" + oggi)["totale"], "limite": self.limite_token()}
+
+    def limite_token(self):
+        """Il tetto dei lavori automatici cresce con il ritmo scelto: più lavoro, più spesa."""
+        r = self.db.uno("SELECT valore FROM kv WHERE chiave='ritmo'")
+        nome = json.loads(r["valore"]) if r else "normale"
+        return LIMITE_TOKEN * RITMI.get(nome, {}).get("moltiplicatore", 1)
 
     def sopra_limite(self):
         """Il tetto riguarda solo i lavori automatici: la tua chat non lo consuma."""
-        return self.consumo_oggi()["automatici"] >= LIMITE_TOKEN
+        return self.consumo_oggi()["automatici"] >= self.limite_token()
 
     def log(self, agente, azione, dettaglio=""):
         self.db.esegui("INSERT INTO attivita (ts, agente, azione, dettaglio) VALUES (?,?,?,?)",
@@ -707,6 +719,27 @@ class Ada:
         self.soldi.regole[parola] = cat
         self.log("ada", "regola categoria", f"{parola} → {cat}")
         return f"D'ora in poi «{parola}» va in {cat}."
+
+    def lavoro_studio(self, prompt, tipo, titolo):
+        """Studio o lettura: Ada ragiona su un tema e salva gli appunti; niente chat, niente schermo, solo due strumenti."""
+        if not self.llm.disponibile:
+            return "Saltata: cervello non collegato."
+        with self.lock:
+            self.automatico = True
+            try:
+                with self._lavora("ada", f"Studio: {titolo}"):
+                    risposta = self._ciclo("ada", [{"role": "user", "content": prompt}], STRUMENTI_STUDIO)
+            except ErroreLLM as e:
+                self.log("ada", "errore", e)
+                return f"Errore: {str(e)[:150]}"
+            finally:
+                self.automatico = False
+            azioni = self._azioni_ciclo
+        self.db.esegui("INSERT INTO appunti (ts, tipo, titolo, testo, azioni) VALUES (?,?,?,?,?)",
+                       (int(time.time()), tipo, titolo[:120], risposta[:4000],
+                        json.dumps(azioni, ensure_ascii=False) if azioni else None))
+        self.log("ada", f"appunti ({tipo})", titolo)
+        return f"{titolo}: {risposta}"[:300]
 
     def _routine(self, args):
         azione = args.get("azione")

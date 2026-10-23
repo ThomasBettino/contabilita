@@ -14,6 +14,7 @@ AGENTI = {
     "sviluppo": ("Sviluppo", "Codice, test e revisioni dell'app."),
     "clienti_vendite": ("Clienti e vendite", "Clienti, preventivi, solleciti di pagamento."),
     "acquisti": ("Acquisti", "Cerca e confronta i prodotti e prepara l'ordine. L'ultimo tasto lo premi tu."),
+    "collaudatore": ("Collaudatore", "Mette Ada alla prova come farebbe l'utente e cerca i punti deboli, in simulazione."),
     "revisore": ("Revisore", "Ricontrolla il lavoro degli altri e segnala gli errori."),
 }
 

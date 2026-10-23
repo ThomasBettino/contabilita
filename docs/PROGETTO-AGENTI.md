@@ -77,6 +77,7 @@ Il sistema si migliora da solo: quando un assistente sbaglia o manca qualcosa, i
 - **Capo**: riceve le richieste, le assegna all'assistente giusto, raccoglie i problemi e gestisce il ciclo di miglioramento (sezione 5).
 - **Assistenti specializzati**: uno per ambito, ognuno con il proprio prompt in `agenti/<nome>/prompt.md` e i propri permessi.
 - **Revisore**: ricontrolla il lavoro degli altri (somme, categorie, date, coerenza) e segnala errori al Capo. Non esegue mai azioni sui dati.
+- **Collaudatore**: un «utente» esigente e imprevedibile che mette Ada alla prova in una simulazione isolata (prompt e database copiati, movimenti finti, niente telefono né notifiche). Parla soltanto, non ha strumenti. Un revisore giudica le risposte di Ada e i punti deboli diventano segnalazioni per il ciclo di miglioramento (sezione 5). Il suo ritmo e quello dello studio dei grandi pensatori e della lettura dei libri dell'utente si regolano con il **ritmo di lavoro** (spento, leggero, normale, intenso), che fissa anche il tetto giornaliero di token dei lavori automatici.
 - **Guardiano dei permessi**: livello di codice, non di prompt, che blocca le azioni vietate finché non arriva il tuo ok.
 
 ## 4. Sicurezza e permessi

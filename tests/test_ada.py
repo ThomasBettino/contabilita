@@ -214,7 +214,7 @@ class TestServer(Base):
         self.assertIn(b"Ada", corpo)
         code, corpo = self.chiama(base, "/api/stato")
         self.assertEqual(code, 200)
-        self.assertEqual(len(json.loads(corpo)["agenti"]), 8)
+        self.assertEqual(len(json.loads(corpo)["agenti"]), 9)
         code, corpo = self.chiama(base, "/api/chat", {"messaggio": "ciao"})
         self.assertEqual(json.loads(corpo)["risposta"], "Ciao, sono Ada.")
         self.assertEqual(len(json.loads(self.chiama(base, "/api/chat")[1])["messaggi"]), 2)

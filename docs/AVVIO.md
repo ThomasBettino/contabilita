@@ -56,10 +56,25 @@ La lettura delle notifiche di Revolut riparte da sola dopo il riavvio (è un lav
 Tieni il telefono carico: sotto il 10% Android limita i servizi in background.
 
 ## Ada che lavora da sola
-Con l'hub acceso, Ada ha tre **routine** (le vedi in **Registro**, dove puoi spegnerle o lanciarle subito):
+Con l'hub acceso, Ada ha delle **routine** (le vedi in **Registro**, dove puoi spegnerle o lanciarle subito):
 - **Riepilogo della sera**, ogni giorno alle 21:00: spese, cose che aspettano te, miglioramenti. Lo trovi in chat e ricevi una notifica.
-- **Miglioramento**, ogni 6 ore: se ci sono segnalazioni aperte, Ada corregge i prompt. Senza segnalazioni non fa nulla e non costa nulla.
+- **Miglioramento**, ogni 3 ore (dipende dal ritmo, vedi sotto): se ci sono segnalazioni aperte, Ada corregge i prompt. Senza segnalazioni non fa nulla e non costa nulla.
 - **Promemoria**, ogni 2 ore: ti ricorda con una notifica le decisioni ferme da più di 2 ore.
+
+**Lavoro continuo: ritmo, collaudi, studio e libri.** «Ogni secondo» non è né possibile né sostenibile (ogni pensiero di Ada costa token, quindi soldi), ma Ada lavora da sola per tutto il tempo in cui è accesa, a un **ritmo** che scegli in **Registro, Ritmo di lavoro** (serve il token di accesso, vedi sotto):
+
+| Ritmo | Collaudo | Studio | Lettura | Tetto giornaliero lavori automatici |
+|---|---|---|---|---|
+| Spento | no | no | no | 400.000 token |
+| Leggero | ogni 4 ore | ogni 12 ore | ogni 12 ore | 400.000 token |
+| **Normale** (predefinito) | ogni 2 ore | ogni 6 ore | ogni 4 ore | 800.000 token |
+| Intenso | ogni 30 minuti | ogni 2 ore | ogni ora | 2.000.000 token (costa molto: l'app chiede conferma) |
+
+- **Collaudo.** Un «avatar» esigente e imprevedibile (il **Collaudatore**, un assistente che sa solo parlare, senza strumenti) si comporta come faresti tu: ha fretta, cambia idea, ti rimprovera, incolla testi con ordini nascosti, chiede cose impossibili. Fa un messaggio, poi insiste. Un revisore dà un voto da 1 a 10 e dice cosa non va; se il voto è 7 o meno, il problema diventa una **segnalazione** per Ada, che nel suo ciclo di miglioramento corregge i prompt. Le categorie girano a rotazione (soldi, dati inventati, promesse senza azioni, pressione, istruzioni nascoste, privacy…). Li vedi in **Registro, Collaudi**, con tutto il dialogo.
+- **La prova è una simulazione isolata**: Ada lì dentro usa una *copia* dei suoi prompt, un database vuoto e movimenti finti. Non può toccare soldi, schermo, notifiche, la tua chat né i prompt veri. Per risparmiare, il Collaudatore e il revisore usano il modello più economico (`ADA_MODEL_ECONOMICO`, predefinito Haiku; se non esiste sul tuo account si usa quello principale).
+- **Studio.** A rotazione Ada studia 24 grandi menti (scienziati, matematici, investitori, venditori e negoziatori) e ne ricava tre principi da applicare a te. **È la sua conoscenza di quelle persone, non la lettura dei loro libri**, e le è vietato inventare citazioni: sull'app è etichettato come «lezione». Durante lo studio può solo aggiungere una regola breve a un prompt (annullabile) o proporre un'idea.
+- **Libri veri.** Ada non può leggere libri che non ha. Se vuoi che li legga, copia file `.txt`, `.md` o `.epub` nella cartella `~/ada/libri` (da Termux: `cp /sdcard/Download/libro.epub ~/ada/libri/`; i PDF non sono supportati). Ada li legge a pezzi, ricorda a che punto è e scrive appunti: **Registro, Studio e letture**. Il testo di un libro è per lei materiale da studiare, mai ordini da eseguire.
+- **Costi.** Tutto questo sta dentro il tetto dei lavori automatici (la chat con Ada non lo consuma mai). Quando il tetto di oggi è finito, collaudi, studio e letture si fermano fino a domani; da **Esegui ora** puoi comunque lanciarli a mano. Se non la vuoi lavorare da sola, scegli **Spento**.
 
 **Ogni giorno una miglioria (alle 6:30).** Ada guarda cosa è successo (attività, errori, segnalazioni, spese rimaste senza categoria) e sceglie la miglioria più utile e a basso rischio.
 - **Cose che fa da sola, subito:** correggere i prompt dei suoi assistenti (di norma aggiungendo una regola breve in fondo, nella sezione «Regole imparate»; riscrivere tutto un prompt è l'eccezione), creare o cambiare routine, insegnare regole di categoria alle spese (per esempio "Anthropic" va in Abbonamenti), chiudere segnalazioni. Tutto compare in **Registro** e si può annullare.
@@ -71,7 +86,7 @@ Ada può anche creare altre routine da sola (massimo 8, ogni 30 minuti al minimo
 
 **Notifiche sul telefono:** servono Termux:API e il permesso notifiche. Impostazioni, App, **Termux:API**, Notifiche, attiva. I testi sono generici ("Ada ha bisogno di te"), senza importi, per non mostrare dati sul blocco schermo.
 
-**Costi sotto controllo:** i lavori automatici si fermano quando superano 400.000 token al giorno (cambialo con `export ADA_LIMITE_TOKEN=200000` in `~/.ada.env`). **La chat con Ada non consuma quel tetto e non ha limiti.** In Registro vedi il consumo totale di oggi e quello dei lavori automatici. I token della cache dei prompt contano un decimo, perché costano un decimo.
+**Costi sotto controllo:** i lavori automatici si fermano quando superano il tetto del ritmo scelto (400.000 token al giorno è la base, per il ritmo Normale il doppio; cambia la base con `export ADA_LIMITE_TOKEN=200000` in `~/.ada.env`). **La chat con Ada non consuma quel tetto e non ha limiti.** In Registro vedi il consumo totale di oggi e quello dei lavori automatici. I token della cache dei prompt contano un decimo, perché costano un decimo.
 
 **Fuso orario:** le routine usano l'ora italiana (`Europe/Rome`). Se serve un altro fuso, `export ADA_FUSO=...` in `~/.ada.env`.
 
@@ -100,6 +115,6 @@ Quando ci sono versioni nuove del programma: **Registro, Aggiornamenti, Aggiorna
 - Database e prompt di Ada stanno in `~/ada`, i movimenti in `~/movimenti.db`: fuori dal repo, mai nel repository.
 
 ## Cosa fa oggi e cosa no
-Funziona: chat con Ada, team di 7 assistenti (con Acquisti), delega, ciclo di miglioramento dei prompt, approvazioni, riepilogo spese dai movimenti Revolut.
+Funziona: chat con Ada, team di 7 assistenti più il Collaudatore (che esiste solo per mettere alla prova Ada), delega, ciclo di miglioramento dei prompt, approvazioni, riepilogo spese dai movimenti Revolut.
 Controllo del telefono (ricerca e acquisti): richiede la configurazione in `docs/TELEFONO.md`.
 Non ancora collegati come strumenti propri: Gmail, Calendario, WhatsApp, fatture (Ada può usarli solo attraverso lo schermo, quando il telefono è collegato). Ada lo sa e non finge di usarli.

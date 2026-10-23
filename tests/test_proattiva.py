@@ -47,7 +47,7 @@ class TestPianificatore(Base):
     def test_routine_predefinite_e_non_duplicate(self):
         c = self.ctx()
         Pianificatore(c.ada)
-        self.assertEqual([r["nome"] for r in c.pian.elenco()], ["riepilogo_sera", "miglioria_quotidiana", "fatture", "miglioramento", "promemoria_approvazioni"])
+        self.assertEqual([r["nome"] for r in c.pian.elenco()], ["riepilogo_sera", "miglioria_quotidiana", "collaudo", "studio", "lettura", "fatture", "miglioramento", "promemoria_approvazioni"])
 
     def test_riepilogo_gira_una_volta_scrive_in_chat_e_avvisa_senza_cifre(self):
         c = self.ctx(FinteRisposte(con_uso(testo("Oggi 0 spese, tutto tranquillo."))))
@@ -63,6 +63,7 @@ class TestPianificatore(Base):
 
     def test_limite_di_consumo_ferma_le_routine_ma_non_la_chat(self):
         c = self.ctx(FinteRisposte(testo("ok chat")))
+        c.pian.imposta_ritmo("leggero")  # moltiplicatore 1: il tetto è proprio quello impostato
         with mock.patch.object(cervello, "LIMITE_TOKEN", 100):
             c.db.esegui("INSERT INTO consumi VALUES (?,?,?,?)", ("auto:" + time.strftime("%Y-%m-%d"), 90, 20, 1))
             rid = c.db.uno("SELECT id FROM routine WHERE nome='riepilogo_sera'")["id"]
@@ -401,7 +402,7 @@ class TestServerRoutine(Base):
                 return e.code, json.load(e)
 
         stato = json.load(urllib.request.urlopen(base + "/api/stato"))
-        self.assertEqual(len(stato["routine"]), 5)
+        self.assertEqual(len(stato["routine"]), 8)
         self.assertEqual(stato["consumo"]["totale"], 0)
         rid = next(r["id"] for r in stato["routine"] if r["nome"] == "miglioramento")
         self.assertIn("niente da fare", post(f"/api/routine/{rid}/esegui", {})[1]["esito"])

@@ -1,4 +1,5 @@
 """Routine di Ada: lavori che partono da soli a orari fissi, con un tetto di consumo."""
+import json
 import os
 import threading
 import time
@@ -10,6 +11,20 @@ except ImportError:  # Python senza zoneinfo
     ZoneInfo = None
 
 PENDENTI = "('in_attesa','scelta','autorizzata','pronto')"
+
+# Quanto lavora Ada da sola: ogni valore è ogni quanti minuti parte il lavoro (None = spento).
+# Il moltiplicatore allarga il tetto giornaliero di token per i lavori automatici: più lavoro, più spesa.
+RITMI = {
+    "spento": {"etichetta": "Spento", "moltiplicatore": 1, "collaudo": None, "studio": None, "lettura": None, "miglioramento": 720,
+               "descrizione": "Niente collaudi, studio e letture: restano solo le routine fisse."},
+    "leggero": {"etichetta": "Leggero", "moltiplicatore": 1, "collaudo": 240, "studio": 720, "lettura": 720, "miglioramento": 360,
+                "descrizione": "Un collaudo ogni 4 ore, uno studio e una lettura ogni 12."},
+    "normale": {"etichetta": "Normale", "moltiplicatore": 2, "collaudo": 120, "studio": 360, "lettura": 240, "miglioramento": 180,
+                "descrizione": "Un collaudo ogni 2 ore, uno studio ogni 6, una lettura ogni 4."},
+    "intenso": {"etichetta": "Intenso", "moltiplicatore": 5, "collaudo": 30, "studio": 120, "lettura": 60, "miglioramento": 60,
+                "descrizione": "Un collaudo ogni mezz'ora, studio ogni 2 ore, lettura ogni ora. Consuma molto."},
+}
+RITMO_PREDEFINITO = "normale"
 
 PREDEFINITE = [
     {"nome": "riepilogo_sera", "descrizione": "Riepilogo della giornata: spese, cose da decidere, miglioramenti.",
@@ -28,6 +43,12 @@ PREDEFINITE = [
                 "e non hai già proposto un'idea oggi, usa proponi_idea con un motivo basato su un fatto osservato. 5) Non toccare "
                 "soldi, schermo o regole di sicurezza. Chiudi con 3-4 righe: cosa hai migliorato oggi e perché. Se davvero non "
                 "c'è nulla da migliorare, dillo in una riga senza inventare.")},
+    {"nome": "collaudo", "descrizione": "Un collaudatore esigente mette Ada alla prova in una simulazione e segnala i punti deboli.",
+     "tipo": "codice", "ora": None, "ogni_min": 120, "prompt": None},
+    {"nome": "studio", "descrizione": "Ada studia un grande pensatore (scienziato, matematico, venditore) e ne ricava una regola utile.",
+     "tipo": "codice", "ora": None, "ogni_min": 360, "prompt": None},
+    {"nome": "lettura", "descrizione": "Ada legge a pezzi i libri che metti nella cartella ~/ada/libri e ne ricava appunti.",
+     "tipo": "codice", "ora": None, "ogni_min": 240, "prompt": None},
     {"nome": "fatture", "descrizione": "Aggiorna l'archivio fatture e riconosce i bonifici in arrivo sul conto.",
      "tipo": "codice", "ora": None, "ogni_min": 10, "prompt": None},
     {"nome": "miglioramento", "descrizione": "Rivede le segnalazioni aperte e migliora i prompt (solo se ce ne sono).",
@@ -67,6 +88,30 @@ class Pianificatore:
             # le routine di sistema non le modifica Ada: si tengono allineate al codice a ogni avvio
             self.db.esegui("UPDATE routine SET descrizione=?, tipo=?, prompt=? WHERE nome=?",
                            (r["descrizione"], r["tipo"], r["prompt"], r["nome"]))
+
+        if self.ritmo() is None:
+            self.imposta_ritmo(RITMO_PREDEFINITO)
+
+    def ritmo(self):
+        r = self.db.uno("SELECT valore FROM kv WHERE chiave='ritmo'")
+        return json.loads(r["valore"]) if r else None
+
+    def imposta_ritmo(self, nome):
+        """Applica il ritmo scelto alle routine che lavorano da sole, sfalsandone le partenze."""
+        if nome not in RITMI:
+            raise ValueError("Ritmo sconosciuto.")
+        adesso = int(self.adesso())
+        for i, chiave in enumerate(("collaudo", "studio", "lettura", "miglioramento")):
+            ogni = RITMI[nome][chiave]
+            if ogni is None:
+                self.db.esegui("UPDATE routine SET attiva=0 WHERE nome=?", (chiave,))
+                continue
+            attiva = "" if chiave == "miglioramento" else ", attiva=1"  # quella di sistema la accende e spegne l'utente
+            self.db.esegui(f"UPDATE routine SET ogni_min=?, prossima=?{attiva} WHERE nome=?",
+                           (ogni, adesso + (i + 1) * 120 + min(ogni, 60) * 60, chiave))
+        self.db.esegui("INSERT INTO kv (chiave, valore) VALUES ('ritmo', ?) "
+                       "ON CONFLICT(chiave) DO UPDATE SET valore=excluded.valore", (json.dumps(nome),))
+        self.ada.log("utente", "ritmo di lavoro", nome)
 
     def elenco(self):
         return self.db.tutti("SELECT id, nome, descrizione, tipo, ora, ogni_min, attiva, prossima, ultima, esito "
@@ -112,6 +157,27 @@ class Pianificatore:
         except ErroreFatture as e:
             return f"Non riesco a leggere l'archivio: {e}"
         return f"Archivio: {s['totale']} fatture ({s['nuove']} nuove). {inc}"[:250]
+
+    def _senza_limite(self, manuale):
+        return None if manuale or not self.ada.sopra_limite() else "Saltata: limite di consumo di oggi raggiunto."
+
+    def _collaudo(self, manuale):
+        c = getattr(self.ada, "collaudo", None)
+        if not c or not self.ada.llm.disponibile:
+            return "Saltata: cervello non collegato."
+        return self._senza_limite(manuale) or c.esegui()
+
+    def _studio(self, manuale):
+        s = getattr(self.ada, "studio", None)
+        if not s or not self.ada.llm.disponibile:
+            return "Saltata: cervello non collegato."
+        return self._senza_limite(manuale) or s.lezione()
+
+    def _lettura(self, manuale):
+        s = getattr(self.ada, "studio", None)
+        if not s or not self.ada.llm.disponibile:
+            return "Saltata: cervello non collegato."
+        return self._senza_limite(manuale) or s.lettura()
 
     def _miglioramento(self, manuale):
         if not self.db.uno("SELECT 1 AS x FROM segnalazioni WHERE stato='aperta'"):
