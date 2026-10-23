@@ -121,7 +121,8 @@ console.log('telefono.js');
     mia('n6', '[Telefono] WhatsApp | Mario Bianchi | 10:09', 'Scrivimi tu', 36, 'Estraneo <altro@example.com>'),
     mia('n7', '[Telefono lavoro] WhatsApp | Tata ❤️ | 10:10', 'Mi chiami?', 35),
     mia('n8', '[Telefono lavoro] WhatsApp | Tata ❤️ | 10:12', 'Serve il latte', 33),
-    mia('n9', '[Telefono] Telefono | Chiamata persa | 10:14', 'Papi', 31)
+    mia('n9', '[Telefono] Telefono | Chiamata persa | 10:14', 'Papi', 31),
+    mia('n10', '[Telefono] {not_app_name} | {not_title} | 12', '{notification}', 30)
   ] });
   scrivi(path.join(W, 'agente/config/telefono.json'), { importanti: [{ rubrica: 'Tata', chi: 'Martina' }, { rubrica: 'Papi', chi: 'papà' }, 'Mamma'] });
   esegui('telefono.js', [path.join(W, 'thread.json'), path.join(W, 'agente'), path.join(W, 'vendite'), path.join(W, 'out'), 'io@example.com']);
@@ -129,7 +130,7 @@ console.log('telefono.js');
   const s = leggi(path.join(W, 'out/sync/telefono.json'));
   prova('racconta il cliente, la chiamata persa e la persona importante, non un nome solo', r.reparto === 'telefono' && r.righe.length === 4 && /Bianchi Mario \(preventivo Citroën C3 aperto\) ti ha scritto su WhatsApp/.test(r.righe[0]) && /chiamata persa da Laura Verdi/.test(r.righe[1]) &&
     /^Martina ti ha scritto su WhatsApp sul telefono di lavoro \(2 messaggi, .*l'ultimo\): «Serve il latte»/.test(r.righe[2]) && /chiamata persa da papà/.test(r.righe[3]), r.righe);
-  prova('nasconde i codici, salta Gmail e le email di altri', s.collegato && s.ultime.length === 7 && /Tata → Martina/.test(s.testo) && s.ultime.some((n) => n.tel === 'lavoro') && /\[lavoro\]/.test(s.testo) && /••••/.test(s.testo) && !/123456/.test(s.testo) && !s.ultime.some((n) => n.app === 'Gmail' || n.id === 'n6'), s);
+  prova('nasconde i codici, salta Gmail, le prove di MacroDroid e le email di altri', s.collegato && s.ultime.length === 7 && /Tata → Martina/.test(s.testo) && s.ultime.some((n) => n.tel === 'lavoro') && /\[lavoro\]/.test(s.testo) && /••••/.test(s.testo) && !/123456/.test(s.testo) && !s.ultime.some((n) => n.app === 'Gmail' || n.id === 'n6'), s);
   fs.cpSync(path.join(W, 'out/sync'), path.join(W, 'agente/sync'), { recursive: true });
   esegui('telefono.js', [path.join(W, 'thread.json'), path.join(W, 'agente'), path.join(W, 'vendite'), path.join(W, 'out2'), 'io@example.com']);
   prova('non ripete le notifiche già viste', leggi(path.join(W, 'out2/righe/telefono-notifiche.json')).righe.length === 0 && leggi(path.join(W, 'out2/sync/telefono.json')).ultime.length === 7);

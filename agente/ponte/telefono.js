@@ -56,6 +56,8 @@ function notifica(m, t) {
   const app = (parti[0] || 'App').trim();
   // Le notifiche di Gmail e di MacroDroid non si inoltrano: creerebbero un giro senza fine.
   if (/^(gmail|macrodroid)$/i.test(app)) return null;
+  // "Prova azione" di MacroDroid manda il testo magico senza riempirlo ({not_app_name}): non è una notifica vera.
+  if (/^[{\[][\w ]+[}\]]$/.test(app)) return null;
   const titolo = (parti[1] || '').trim();
   return { id: m.id, tel, app, titolo: senzaCodici(titolo), testo: senzaCodici(breve(pulito(m.snippet), 220)), ora: new Date(m.date || Date.now()).toISOString() };
 }
