@@ -379,8 +379,9 @@ class TestFlussoVendite(Base):
             # Ada: avvisa subito, poi passa il compito al reparto vendite
             usa("avvisa_utente", titolo="Bravo!", testo="Hai venduto! Parlo con il reparto vendite e aggiorno tutto subito."),
             usa("delega", agente="clienti_vendite", compito="L'utente dice: ho chiuso la vendita di Zanetti Emilio (full drive, margine 1800)."),
-            # reparto vendite: prova lo schermo, non c'è, mette in coda e prepara il richiamo
+            # reparto vendite: prova lo schermo, non c'è, lo scrive nel diario, lo mette in coda
             usa("telefono_apri", url="https://claude.ai/artifact/ABC123"),
+            usa("vendite_registra", azione="aggiungi", tipo="vendita", cliente="Zanetti Emilio", dettaglio="full drive, margine 1800"),
             usa("vendite_coda", azione="aggiungi", frase="Ho venduto a Zanetti Emilio, full drive, margine 1800 euro",
                 riassunto="Vendita a Zanetti Emilio (full drive, 1.800 € di margine)"),
             testo("Schermo non collegato: ho messo la vendita in coda, la trovi in Agenda."),
@@ -395,6 +396,9 @@ class TestFlussoVendite(Base):
         (coda,) = c.db.tutti("SELECT * FROM vendite_coda")
         self.assertEqual((coda["stato"], coda["frase"]), ("da_riportare", "Ho venduto a Zanetti Emilio, full drive, margine 1800 euro"))
         # il reparto vendite ha lavorato con i suoi strumenti, non con quelli di Ada
+        (voce,) = c.db.tutti("SELECT tipo, cliente, in_app FROM vendite_registro")
+        self.assertEqual((voce["tipo"], voce["cliente"], voce["in_app"]), ("vendita", "Zanetti Emilio", 0))  # nel diario, ma non ancora nell'app
+        self.assertEqual(c.ada.diario.conteggi(), {"vendita": 1})
         nomi_vendite = llm.chiamate[2]["strumenti"]
         self.assertIn("vendite_coda", nomi_vendite)
         self.assertNotIn("delega", nomi_vendite)
@@ -411,6 +415,145 @@ class TestFlussoVendite(Base):
         self.assertIn("lunedì", c.ada._delega("clienti_vendite", "Richiama Zanetti lunedì alle 9:30"))
         (v,) = c.db.tutti("SELECT titolo, giorno, ora, preavviso, origine FROM eventi")
         self.assertEqual((v["giorno"], v["ora"], v["preavviso"], v["origine"]), ("2026-10-26", "09:30", 30, "clienti_vendite"))
+
+
+class TestDiarioVendite(Base):
+    def diario(self):
+        return self.ctx().ada.diario
+
+    def test_aggiungi_e_leggi(self):
+        d = self.diario()
+        v = d.aggiungi("preventivo", "  Rossi   Mario ", " Peugeot 208, 18500 ")
+        self.assertEqual((v["tipo"], v["cliente"], v["dettaglio"], v["giorno"], v["in_app"]), ("preventivo", "Rossi Mario", "Peugeot 208, 18500", "2026-10-24", 0))
+        w = d.aggiungi("vendita", "Zanetti Emilio", "full drive, margine 1800", giorno="2026-10-23", in_app=True)  # «ieri ho venduto…»
+        self.assertEqual((w["giorno"], w["in_app"]), ("2026-10-23", 1))
+        self.assertEqual(d.conteggi(), {"preventivo": 1})
+        self.assertEqual(d.conteggi("2026-10-23"), {"vendita": 1})
+        self.assertIn("preventivo · Rossi Mario · Peugeot 208, 18500 · NON ancora nell'app", d.testo())
+        self.assertEqual(d.contesto(), "DIARIO DI OGGI: 1 preventivo.")
+
+    def test_dati_sbagliati(self):
+        d = self.diario()
+        casi = [(("boh", "Rossi"), "tipo"), (("vendita", ""), "nome del cliente"), (("vendita", "x" * 81), "80"),
+                (("vendita", "Rossi", "y" * 201), "200"), (("vendita", "Rossi", "", "ieri"), "giorno"),
+                (("vendita", "Rossi", "", "2026-10-25"), "futuro"), (("vendita", "Rossi", "", "2026-01-01"), "vecchio")]
+        for args, parte in casi:
+            with self.assertRaises(ValueError, msg=str(args)) as e:
+                d.aggiungi(*args)
+            self.assertIn(parte, str(e.exception).lower(), args)
+        d.aggiungi("altro", "", "Una cosa generica")  # «altro» può non avere cliente
+        self.assertEqual(len(d.elenco()), 1)
+
+    def test_lo_stesso_cliente_non_conta_due_volte_nello_stesso_giorno(self):
+        d = self.diario()
+        d.aggiungi("vendita", "Zanetti Emilio")
+        with self.assertRaises(ValueError) as e:
+            d.aggiungi("vendita", "zanetti emilio")
+        self.assertIn("C'è già", str(e.exception))
+        d.aggiungi("vendita", "Zanetti Emilio", giorno="2026-10-23")  # un altro giorno si può
+        d.aggiungi("chiamata", "Zanetti Emilio")  # le chiamate si ripetono
+        d.aggiungi("chiamata", "Zanetti Emilio")
+        self.assertEqual(d.conteggi(), {"vendita": 1, "chiamata": 2})
+
+    def test_annulla(self):
+        d = self.diario()
+        v = d.aggiungi("preventivo", "Rossi")
+        d.annulla(v["id"])
+        self.assertEqual(d.elenco(), [])
+        with self.assertRaises(LookupError):
+            d.annulla(v["id"])
+
+    def test_lo_strumento_e_solo_del_reparto_vendite(self):
+        c = self.ctx()
+        e = lambda chi, **a: c.ada._esegui(chi, "vendite_registra", a)
+        self.assertIn("Nel diario (id 1): vendita Zanetti Emilio, 2026-10-24. Segnato come NON ancora nell'app.",
+                      e("clienti_vendite", azione="aggiungi", tipo="vendita", cliente="Zanetti Emilio", dettaglio="full drive"))
+        self.assertIn("Nel diario (id 2)", e("clienti_vendite", azione="aggiungi", tipo="preventivo", cliente="Rossi", in_app=True))
+        self.assertIn("Errore nello strumento vendite_registra", e("clienti_vendite", azione="aggiungi", tipo="vendita", cliente="Zanetti Emilio"))
+        self.assertIn("id 1 · vendita · Zanetti Emilio · full drive", e("clienti_vendite", azione="elenco"))
+        self.assertEqual(e("clienti_vendite", azione="annulla", id=2), "Tolto dal diario: preventivo Rossi.")
+        for chi in ("ada", "quotidiano", "revisore"):
+            self.assertEqual(e(chi, azione="elenco"), "Strumento non consentito.", chi)
+
+    def test_ada_vede_com_e_andata_la_giornata(self):
+        c = self.ctx(FinteRisposte(testo("ok")))
+        c.ada.diario.aggiungi("preventivo", "Rossi")
+        c.ada.diario.aggiungi("preventivo", "Bianchi")
+        c.ada.diario.aggiungi("vendita", "Zanetti")
+        c.ada.chiacchiera("com'è andata oggi?")
+        self.assertIn("DIARIO DI OGGI: 2 preventivi, 1 vendita.", c.ada.llm.chiamate[0]["system"])
+
+    def test_riepilogo_delle_18_55(self):
+        c = self.ctx()
+        d, a = c.ada.diario, c.ada.agenda
+        for cliente in ("Rossi Mario", "Bianchi", "Verdi"):
+            d.aggiungi("preventivo", cliente)
+        d.aggiungi("vendita", "Zanetti Emilio", in_app=True)
+        d.aggiungi("chiamata", "Rossi Mario")
+        d.aggiungi("chiamata", "Verdi")
+        d.aggiungi("test_drive", "Bianchi")
+        a.aggiungi("Chiamare Zanetti Emilio", "2026-10-25 09:30", note="vuole pensarci")
+        a.aggiungi("Consegna a Bianchi", "2026-10-25")
+        a.aggiungi("Fra tre giorni", "2026-10-27 10:00")
+        chat, notifica = d.riepilogo_sera()
+        self.assertEqual(chat.splitlines(), [
+            "Riepilogo vendite di oggi, sabato 24/10:",
+            "• Preventivi fatti: 3",
+            "• Vendite: 1 (Zanetti Emilio)",
+            "• 2 chiamate",
+            "• 1 test drive",
+            "• Da riportare nell'app: 6 (li trovi in Agenda, Reparto vendite)",
+            "Per domani, domenica 25/10:",
+            "• tutto il giorno Consegna a Bianchi",
+            "• 09:30 Chiamare Zanetti Emilio (vuole pensarci)"])
+        self.assertEqual(notifica, "Oggi: 3 preventivi, 1 vendita. Domani: 2 in agenda.")
+        self.assertNotIn("Zanetti", notifica)  # sul blocco schermo niente nomi
+
+    def test_riepilogo_con_la_giornata_vuota_e_con_scaduti(self):
+        c = self.ctx()
+        chat, notifica = c.ada.diario.riepilogo_sera()
+        self.assertEqual(chat.splitlines(), ["Riepilogo vendite di oggi, sabato 24/10:", "• Preventivi fatti: 0", "• Vendite: 0",
+                                             "Per domani, domenica 25/10:", "• Niente in agenda."])
+        self.assertEqual(notifica, "Oggi: 0 preventivi, 0 vendite. Domani: 0 in agenda.")
+        c.db.esegui("INSERT INTO eventi (ts, titolo, giorno, ora) VALUES (1, 'Vecchio', '2026-10-20', '')")
+        c.ada.diario.aggiungi("preventivo", "Rossi")
+        self.assertIn("Hai 1 cose scadute da chiudere o spostare.", c.ada.diario.riepilogo_sera()[0])
+
+    def test_la_coda_pesa_nel_riepilogo(self):
+        c = self.ctx()
+        c.ada.diario.aggiungi("vendita", "Zanetti", in_app=True)
+        c.db.esegui("INSERT INTO vendite_coda (ts, frase, riassunto) VALUES (1, 'una frase lunga', 'x')")
+        self.assertIn("• Da riportare nell'app: 1", c.ada.diario.riepilogo_sera()[0])
+
+
+class TestRoutineVenditeSera(Base):
+    def test_e_programmata_alle_18_55_ogni_giorno(self):
+        c = self.ctx()
+        r = c.db.uno("SELECT ora, ogni_min, attiva, tipo FROM routine WHERE nome='vendite_sera'")
+        self.assertEqual((r["ora"], r["ogni_min"], r["attiva"], r["tipo"]), ("18:55", None, 1, "codice"))
+
+    def test_scrive_in_chat_avvisa_e_non_usa_il_cervello(self):
+        c = self.ctx()
+        c.ada.diario.aggiungi("preventivo", "Rossi")
+        c.ada.diario.aggiungi("vendita", "Zanetti Emilio", in_app=True)
+        esito = c.pian.esegui(c.db.uno("SELECT id FROM routine WHERE nome='vendite_sera'")["id"])
+        self.assertEqual(esito, "Oggi: 1 preventivo, 1 vendita. Domani: 0 in agenda.")
+        (m,) = c.db.tutti("SELECT ruolo, testo FROM chat")
+        self.assertEqual(m["ruolo"], "ada")
+        self.assertIn("• Vendite: 1 (Zanetti Emilio)", m["testo"])
+        self.assertEqual(self.inviate, [("Riepilogo vendite", "Oggi: 1 preventivo, 1 vendita. Domani: 0 in agenda.", "ada-vendite-sera")])
+        self.assertEqual(c.ada.llm.chiamate, [])
+
+    def test_parte_da_sola_alle_18_55(self):
+        c = self.ctx()
+        c.db.esegui("UPDATE routine SET attiva=0 WHERE nome!='vendite_sera'")
+        r = c.db.uno("SELECT prossima FROM routine WHERE nome='vendite_sera'")["prossima"]
+        self.assertEqual(c.ada.agenda.locale(r).strftime("%H:%M"), "18:55")
+        self.t = r + 1
+        c.pian.tick()
+        self.assertEqual(len(c.db.tutti("SELECT * FROM chat")), 1)
+        c.pian.tick()  # non due volte
+        self.assertEqual(len(c.db.tutti("SELECT * FROM chat")), 1)
 
 
 class TestPromptDiPartenza(Base):
@@ -435,7 +578,7 @@ class TestPromptDiPartenza(Base):
         self.assertIn("regola nuova", Squadra(casa).prompt("clienti_vendite"))
 
 
-class TestServerAgenda(Base):
+class ClienteHTTP(Base):
     def avvia(self, token=""):
         c = self.ctx(token=token)
         srv = crea_server(c, "127.0.0.1", 0)
@@ -456,6 +599,8 @@ class TestServerAgenda(Base):
         except urllib.error.HTTPError as e:
             return e.code, json.load(e)
 
+
+class TestServerAgenda(ClienteHTTP):
     def test_aggiungere_leggere_cambiare(self):
         self.avvia()
         codice, v = self.chiama("/api/agenda", {"titolo": "Chiamare Zanetti", "quando": "2026-10-25 09:30", "tipo": "promemoria", "preavviso_min": 15})
@@ -506,6 +651,20 @@ class TestServerAgenda(Base):
         self.assertEqual(([x["id"] for x in j["coda"]], [x["riassunto"] for x in j["fatte"]]), ([], ["Chiamata a Rossi"]))
         self.assertEqual(self.chiama("/api/vendite/coda/1", {"azione": "boh"})[0], 400)
         self.assertEqual(self.chiama("/api/vendite/coda/99", {"azione": "fatto"})[0], 404)
+
+
+class TestServerDiario(ClienteHTTP):
+    def test_il_diario_di_oggi_arriva_all_app_e_si_puo_correggere(self):
+        c = self.avvia()
+        c.ada.diario.aggiungi("preventivo", "Rossi")
+        c.ada.diario.aggiungi("vendita", "Zanetti", "full drive")
+        j = self.chiama("/api/vendite")[1]
+        self.assertEqual((j["oggi"]["giorno"], j["oggi"]["conteggi"]), ("2026-10-24", {"preventivo": 1, "vendita": 1}))
+        self.assertEqual([v["cliente"] for v in j["oggi"]["voci"]], ["Rossi", "Zanetti"])
+        self.assertEqual(self.chiama("/api/vendite/registro/1", {"azione": "elimina"}), (200, {"ok": True}))
+        self.assertEqual(self.chiama("/api/vendite")[1]["oggi"]["conteggi"], {"vendita": 1})
+        self.assertEqual(self.chiama("/api/vendite/registro/1", {"azione": "elimina"})[0], 404)
+        self.assertEqual(self.chiama("/api/vendite/registro/2", {"azione": "boh"})[0], 400)
 
 
 if __name__ == "__main__":

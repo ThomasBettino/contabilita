@@ -61,6 +61,7 @@ class Contesto:
 
     def vendite_stato(self):
         return {"url": self.ada.vendite_url(),
+                "oggi": {"giorno": self.ada.agenda.oggi(), "conteggi": self.ada.diario.conteggi(), "voci": self.ada.diario.elenco()},
                 "coda": self.db.tutti("SELECT id, ts, frase, riassunto FROM vendite_coda WHERE stato='da_riportare' ORDER BY id"),
                 "fatte": self.db.tutti("SELECT id, ts_stato, riassunto FROM vendite_coda WHERE stato='fatto' ORDER BY ts_stato DESC LIMIT 5")}
 
@@ -291,6 +292,12 @@ def crea_handler(ctx):
                               (json.dumps(url),))
                 ctx.ada.log("utente", "app vendite", "indirizzo impostato" if url else "indirizzo tolto")
                 return {"url": url}
+            m = re.fullmatch(r"/api/vendite/registro/(\d+)", path)
+            if metodo == "POST" and m:
+                if corpo.get("azione") != "elimina":
+                    raise ValueError("L'azione è elimina.")
+                ctx.ada._vendite_registra("utente", {"azione": "annulla", "id": int(m.group(1))})
+                return {"ok": True}
             m = re.fullmatch(r"/api/vendite/coda/(\d+)", path)
             if metodo == "POST" and m:
                 if corpo.get("azione") not in ("fatto", "elimina"):

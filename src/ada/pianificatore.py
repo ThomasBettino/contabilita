@@ -56,6 +56,8 @@ PREDEFINITE = [
      "tipo": "codice", "ora": None, "ogni_min": 1, "prompt": None},
     {"nome": "agenda_mattina", "descrizione": "Ogni mattina avvisa con un riepilogo di ciò che c'è in agenda oggi (se non c'è niente, non fa niente).",
      "tipo": "codice", "ora": "07:30", "ogni_min": None, "prompt": None},
+    {"nome": "vendite_sera", "descrizione": "Ogni giorno alle 18:55: quanti preventivi e vendite hai fatto oggi e cosa hai per domani (dal diario che Ada tiene di ciò che le racconti).",
+     "tipo": "codice", "ora": "18:55", "ogni_min": None, "prompt": None},
     {"nome": "fatture", "descrizione": "Aggiorna l'archivio fatture e riconosce i bonifici in arrivo sul conto.",
      "tipo": "codice", "ora": None, "ogni_min": 10, "prompt": None},
     {"nome": "miglioramento", "descrizione": "Rivede le segnalazioni aperte e migliora i prompt (solo se ce ne sono).",
@@ -218,6 +220,12 @@ class Pianificatore:
             return "Niente in agenda oggi."
         self.ada.avvisa(r[0], r[1], "ada-agenda-mattina")
         return f"Avviso del mattino: {r[1]}"[:250]
+
+    def _vendite_sera(self, manuale):
+        chat, notifica = self.ada.diario.riepilogo_sera()
+        self.ada._dici(chat)
+        self.ada.avvisa("Riepilogo vendite", notifica, "ada-vendite-sera")
+        return notifica
 
     def _senza_limite(self, manuale):
         return None if manuale or not self.ada.sopra_limite() else "Saltata: limite di consumo di oggi raggiunto."

@@ -13,6 +13,7 @@ import time
 
 from .agenda import Agenda
 from .agenti import AGENTI, SEED
+from .vendite import TIPI as TIPI_DIARIO, Diario
 from .soldi import NOMI_CATEGORIE
 from .llm import ErroreLLM
 from .pianificatore import PREDEFINITE, RITMI, prossima_esecuzione
@@ -40,7 +41,7 @@ MANDATO = """OBIETTIVO: costruire la migliore squadra possibile per gestire l'ut
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut (riepilogo_spese): le notifiche le legge da sola la routine «notifiche» ogni 2 minuti, senza schermo e senza che l'utente faccia niente; se manca un movimento, guarda prima la riga «Lettura notifiche Revolut» (riepilogo_spese o stato_sistema) e rispondi con quei fatti: chiedi all'utente di controllare il telefono solo se la lettura funziona e la notifica non compare (Android mostra solo le notifiche ancora presenti); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 AGENDA: hai un'agenda interna con promemoria ed eventi (agenda_aggiungi, agenda_elenco, agenda_cambia): all'ora giusta il telefono avvisa l'utente da solo. Quando l'utente dice «ricordami…», «segna…», «domani alle 9…», aggiungi la voce subito (giorno AAAA-MM-GG e ora HH:MM, calcolati dalla data di adesso che trovi nel contesto), senza chiedere conferma se il dato c'è. Non è il Calendario di Google: non lo legge né lo scrive.
-REPARTO VENDITE: l'utente ha un'app sul telefono, «Andamento vendite» (preventivi, vendite, clienti da richiamare, pagamenti, agenda degli appuntamenti, fatturato, obiettivi; ha un suo Coach che registra a parole). La gestisce l'assistente clienti_vendite, che conosce a memoria tutte le sue funzioni. Quando l'utente ti racconta una novità di lavoro (vendita chiusa, preventivo fatto, cliente chiamato, test drive, appuntamento, acconto o saldo ricevuto, cliente perso): 1) subito avvisa_utente con un messaggio breve e generico (per esempio «Bravo, hai venduto! Parlo con il reparto vendite e aggiorno tutto subito.»), 2) delega a clienti_vendite con la frase dell'utente intera. Lui aggiorna l'app dallo schermo; se lo schermo non c'è, mette l'aggiornamento in coda e lo trovi in Agenda. Non dire mai che l'app è aggiornata se lui non lo conferma.
+REPARTO VENDITE: l'utente ha un'app sul telefono, «Andamento vendite» (preventivi, vendite, clienti da richiamare, pagamenti, agenda degli appuntamenti, fatturato, obiettivi; ha un suo Coach che registra a parole). La gestisce l'assistente clienti_vendite, che conosce a memoria tutte le sue funzioni. Quando l'utente ti racconta una novità di lavoro (vendita chiusa, preventivo fatto, cliente chiamato, test drive, appuntamento, acconto o saldo ricevuto, cliente perso): 1) subito avvisa_utente con un messaggio breve e generico (per esempio «Bravo, hai venduto! Parlo con il reparto vendite e aggiorno tutto subito.»), 2) delega a clienti_vendite con la frase dell'utente intera. Lui aggiorna l'app dallo schermo; se lo schermo non c'è, mette l'aggiornamento in coda e lo trovi in Agenda. Non dire mai che l'app è aggiornata se lui non lo conferma. Ogni novità finisce anche nel diario di lavoro (lo fa il reparto vendite con vendite_registra): alle 18:55 di ogni giorno parte da sola la routine che racconta all'utente quanti preventivi e vendite ha fatto oggi e cosa ha per domani, e lo fa da quel diario: per questo ogni novità che l'utente ti racconta va sempre passata al reparto vendite, anche se pensi di averla già sentita.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario di Google, WhatsApp, documenti (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
 try:
     MANUALE_VENDITE = (SEED / "clienti_vendite" / "manuale-app.md").read_text(encoding="utf-8")
@@ -129,6 +130,11 @@ T_VENDITE_CODA = _tool("vendite_coda",
                        "Coda degli aggiornamenti da riportare nell'app Andamento vendite quando non puoi farlo dallo schermo. aggiungi = frase (da incollare nel Coach dell'app, senza accenti) e riassunto (per l'utente); elenco; fatto = id.",
                        {"azione": {"type": "string", "enum": ["aggiungi", "elenco", "fatto"]}, "frase": _S, "riassunto": _S, "id": _N}, ["azione"])
 
+T_VENDITE_REGISTRA = _tool("vendite_registra",
+                           "Diario di lavoro dell'utente: annota OGNI novità (preventivo fatto, vendita chiusa, chiamata, test drive, appuntamento, cliente perso, pagamento) anche se l'app non è raggiungibile: da qui nasce il riepilogo delle 18:55. aggiungi / elenco / annulla. giorno = AAAA-MM-GG (di solito oggi; per le cose raccontate in ritardo, come «ieri ho venduto…», il giorno vero). in_app = true solo se hai visto l'app registrare la modifica.",
+                           {"azione": {"type": "string", "enum": ["aggiungi", "elenco", "annulla"]}, "tipo": {"type": "string", "enum": list(TIPI_DIARIO)},
+                            "cliente": _S, "dettaglio": _S, "giorno": _S, "in_app": {"type": "boolean"}, "id": _N}, ["azione"])
+
 STRUMENTI_AGENDA = [T_AGENDA_AGGIUNGI, T_AGENDA_ELENCO, T_AGENDA_CAMBIA]
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_FATTURE, T_SEGNALA, T_APPROVAZIONE]
@@ -138,7 +144,7 @@ STRUMENTI_ADA = (STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + STRUMENTI_AGENDA
 STRUMENTI_QUOTIDIANO = STRUMENTI_ASSISTENTI + STRUMENTI_AGENDA
 # l'app vendite si aggiorna dallo schermo: stessi strumenti del telefono, senza quelli per gli acquisti
 STRUMENTI_VENDITE = (STRUMENTI_ASSISTENTI + [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI]
-                     + STRUMENTI_AGENDA + [T_AVVISA, T_VENDITE_CODA])
+                     + STRUMENTI_AGENDA + [T_AVVISA, T_VENDITE_CODA, T_VENDITE_REGISTRA])
 GIRI = {"ada": 12, "acquisti": 30, "clienti_vendite": 30}  # il telefono richiede molti passaggi
 
 
@@ -168,6 +174,7 @@ class Ada:
         self.notifica = None      # funzione(titolo, testo, id) impostata dal server
         self.archivio = None      # archivio fatture P.IVA (src/ada/fatture.py)
         self.agenda = Agenda(db)  # promemoria ed eventi con avviso sul telefono
+        self.diario = Diario(db, self.agenda)  # preventivi, vendite e chiamate raccontati ad Ada
         self.soldi.regole = {r["parola"]: r["categoria"] for r in self.db.tutti("SELECT parola, categoria FROM regole_categoria")}
 
     # ---------- utilità ----------
@@ -234,6 +241,8 @@ class Ada:
                          "APP VENDITE: indirizzo non impostato. Chiedi all'utente di incollarlo in Agenda, Reparto vendite (o di scriverlo in chat).")
         if (agenda := self.agenda.contesto()):
             righe.append(agenda)
+        if chi in ("ada", "clienti_vendite") and (diario := self.diario.contesto()):
+            righe.append(diario)
         if chi == "ada":
             routine = self.db.tutti("SELECT nome, ora, ogni_min, attiva FROM routine ORDER BY id")
             if routine:
@@ -347,6 +356,8 @@ class Ada:
                 return self._avvisa_utente(chi, args)
             if nome == "vendite_coda":
                 return self._vendite_coda(chi, args)
+            if nome == "vendite_registra":
+                return self._vendite_registra(chi, args)
         except Exception as e:  # lo strumento fallito non deve far cadere la conversazione
             self.log(chi, "errore", f"{nome}: {type(e).__name__} {e}")
             return f"Errore nello strumento {nome}: {e}"
@@ -412,6 +423,20 @@ class Ada:
             return "Segnato come riportato nell'app."
         righe = self.db.tutti("SELECT id, riassunto, frase FROM vendite_coda WHERE stato='da_riportare' ORDER BY id")
         return "\n".join(f"- id {r['id']}: {r['riassunto']} | frase: {r['frase']}" for r in righe) or "Coda vuota: tutto è stato riportato nell'app."
+
+    def _vendite_registra(self, chi, args):
+        azione = args["azione"]
+        if azione == "elenco":
+            return self.diario.testo(args.get("giorno"))
+        if azione == "annulla":
+            v = self.diario.voce(args["id"])
+            self.diario.annulla(args["id"])
+            self.log(chi, "diario vendite", f"annullato: {v['tipo']} {v['cliente']}")
+            return f"Tolto dal diario: {v['tipo'].replace('_', ' ')} {v['cliente']}."
+        v = self.diario.aggiungi(args.get("tipo"), args.get("cliente"), args.get("dettaglio"), args.get("giorno"), bool(args.get("in_app")), chi)
+        self.log(chi, "diario vendite", f"{v['tipo']}: {v['cliente']} ({v['giorno']})")
+        return (f"Nel diario (id {v['id']}): {v['tipo'].replace('_', ' ')} {v['cliente']}, {v['giorno']}"
+                + ("." if v["in_app"] else ". Segnato come NON ancora nell'app."))
 
     def vendite_url(self):
         r = self.db.uno("SELECT valore FROM kv WHERE chiave='vendite_url'")

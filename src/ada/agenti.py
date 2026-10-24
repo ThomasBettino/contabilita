@@ -9,7 +9,7 @@ SEED = Path(__file__).resolve().parents[2] / "agenti"
 
 # Prompt di partenza delle versioni precedenti (impronta SHA-1): se il file dell'utente è ancora identico, non l'ha modificato né Ada
 # né lui, quindi si può sostituire con quello nuovo senza perdere niente.
-SEED_PRECEDENTI = {"clienti_vendite": {"392acf0747ab5d31cde88795d8f8141a3233dab8"},
+SEED_PRECEDENTI = {"clienti_vendite": {"392acf0747ab5d31cde88795d8f8141a3233dab8", "dc37aa51ef308c21bb89daa875b364a8a0c30695"},
                    "quotidiano": {"6366627dd5052b6611592e02626e62c81a1d486b"}}
 
 AGENTI = {

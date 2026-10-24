@@ -425,11 +425,11 @@ const ETICHETTE_ROUTINE = {
   notifiche: "Lettura notifiche Revolut", fatture: "Archivio fatture e bonifici", miglioria_quotidiana: "Miglioria del giorno",
   miglioramento: "Correzione dei prompt", collaudo: "Collaudo di Ada", studio: "Studio dei grandi pensatori", lettura: "Lettura dei tuoi libri",
   riepilogo_sera: "Riepilogo della sera", promemoria_approvazioni: "Promemoria delle approvazioni",
-  agenda: "Avvisi dell'agenda", agenda_mattina: "Agenda del mattino",
+  agenda: "Avvisi dell'agenda", agenda_mattina: "Agenda del mattino", vendite_sera: "Riepilogo vendite delle 18:55",
 };
 const GRUPPI_ROUTINE = [
   ["Soldi", ["notifiche", "fatture"]],
-  ["Agenda", ["agenda", "agenda_mattina"]],
+  ["Agenda e vendite", ["agenda", "agenda_mattina", "vendite_sera"]],
   ["Ada che migliora sé stessa", ["miglioria_quotidiana", "miglioramento", "collaudo", "studio", "lettura"]],
   ["Riepiloghi e promemoria", ["riepilogo_sera", "promemoria_approvazioni"]],
 ];
@@ -745,6 +745,20 @@ async function caricaVendite() {
   $("vendite-nota").textContent = j.url
     ? "Quando racconti una vendita, un preventivo o una chiamata, il reparto vendite aggiorna l'app dal telefono. Se lo schermo non è collegato, l'aggiornamento resta qui in coda."
     : "Incolla il link dell'app «Andamento vendite» (lo trovi nel menu Condividi dell'app): serve ad Ada per aprirla e aggiornarla.";
+  const TIPI_DIARIO = { preventivo: "Preventivi", vendita: "Vendite", chiamata: "Chiamate", test_drive: "Test drive", appuntamento: "Appuntamenti", perso: "Persi", pagamento: "Pagamenti", altro: "Altro" };
+  const SING = { preventivo: "Preventivo", vendita: "Vendita", chiamata: "Chiamata", test_drive: "Test drive", appuntamento: "Appuntamento", perso: "Cliente perso", pagamento: "Pagamento", altro: "Altro" };
+  const c = j.oggi.conteggi;
+  svuota($("vendite-oggi"),
+    h("h3", null, "Il diario di oggi"),
+    h("div", { class: "tessere" }, ["preventivo", "vendita", "chiamata"].map((t) => h("div", { class: "tessera" }, h("small", null, TIPI_DIARIO[t]), h("b", null, String(c[t] || 0))))),
+    h("p", { class: "nota" }, "Alle 18:55 Ada ti manda da sola il riepilogo di oggi e di domani, preso da qui."),
+    j.oggi.voci.length ? h("div", { class: "lista compatta" }, j.oggi.voci.map((v) => h("div", { class: "voce movimento" },
+      h("div", { class: "riga" }, h("span", null, h("b", null, SING[v.tipo] || v.tipo), " · ", v.cliente || "—", v.dettaglio ? h("br") : null,
+        v.dettaglio ? h("span", { class: "meta" }, v.dettaglio) : null)),
+      h("button", { class: "x", type: "button", title: "Togli dal diario", "aria-label": "Togli dal diario", onclick: async () => {
+        if (!confirm(`Tolgo dal diario «${SING[v.tipo] || v.tipo}: ${v.cliente || "—"}»?`)) return;
+        try { await api("/api/vendite/registro/" + v.id, { azione: "elimina" }); caricaVendite(); } catch (e) { toast(e.message); }
+      } }, "✕")))) : h("div", { class: "vuoto" }, "Oggi non c'è ancora niente nel diario."));
   svuota($("vendite-coda"), j.coda.length ? [h("h3", null, `Da riportare nell'app (${j.coda.length})`), j.coda.map((c) => h("div", { class: "voce" },
     h("b", null, c.riassunto),
     h("span", { class: "meta" }, "Frase per il Coach dell'app: " + c.frase),
@@ -772,7 +786,7 @@ const NOMI_STRUMENTI = {
   richiedi_approvazione: "Chiede il tuo ok", telefono_collega: "Collega lo schermo", telefono_schermo: "Guarda lo schermo",
   telefono_tocca: "Tocca lo schermo", telefono_scrivi: "Scrive sullo schermo", telefono_scorri: "Scorre le pagine",
   telefono_vai: "Indietro e home", telefono_apri: "Apre app e pagine", agenda_aggiungi: "Aggiunge promemoria e eventi", agenda_elenco: "Legge l'agenda",
-  agenda_cambia: "Sposta o chiude voci dell'agenda", avvisa_utente: "Manda notifiche sul telefono", vendite_coda: "Mette in coda gli aggiornamenti dell'app vendite", proponi_acquisto: "Propone acquisti",
+  agenda_cambia: "Sposta o chiude voci dell'agenda", vendite_registra: "Tiene il diario di preventivi e vendite", avvisa_utente: "Manda notifiche sul telefono", vendite_coda: "Mette in coda gli aggiornamenti dell'app vendite", proponi_acquisto: "Propone acquisti",
   acquisto_pronto: "Prepara l'ordine", delega: "Affida compiti al team", migliora_prompt: "Migliora i prompt",
   chiudi_segnalazione: "Chiude le segnalazioni", gestisci_routine: "Gestisce le routine", stato_sistema: "Controlla lo stato",
   fattura_incassata: "Segna le fatture incassate", proponi_idea: "Propone funzioni nuove", regola_categoria: "Impara le categorie di spesa",
@@ -786,7 +800,7 @@ const FRASI_ATTIVITA = {
   "routine creata": "Ha creato una routine", "routine modificata": "Ha modificato una routine",
   collaudo: "Ha fatto un collaudo", "appunti (lezione)": "Ha studiato una lezione", "appunti (lettura)": "Ha letto un pezzo di libro",
   "ritmo di lavoro": "Ha scelto il ritmo di lavoro", agenda: "Ha usato l'agenda", "notifica inviata": "Ha mandato una notifica",
-  "coda vendite": "Ha messo in coda un aggiornamento dell'app vendite", "app vendite": "Impostazioni dell'app vendite",
+  "coda vendite": "Ha messo in coda un aggiornamento dell'app vendite", "diario vendite": "Ha annotato nel diario vendite", "app vendite": "Impostazioni dell'app vendite",
   "movimento aggiunto": "Ha aggiunto un movimento", "movimento rimosso": "Ha tolto un movimento", "estratto conto": "Ha caricato un estratto conto",
 };
 const durata = (da) => { const s = Math.max(0, Math.floor(Date.now() / 1000 - da)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`; };
