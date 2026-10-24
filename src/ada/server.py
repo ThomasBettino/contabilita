@@ -8,6 +8,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -26,6 +27,7 @@ from .llm import Claude
 from .notifica import Notifica
 from .pianificatore import RITMI, Pianificatore
 from .soldi import Soldi
+from ..revolut.ingest import leggi_notifiche_termux
 from ..telefono.adb import Adb
 from ..telefono.mano import Mano
 
@@ -95,6 +97,7 @@ class Contesto:
             "idee": self.idee_stato(),
             "ritmo": {"scelto": self.pian.ritmo() if self.pian else None,
                       "opzioni": {k: {"etichetta": v["etichetta"], "descrizione": v["descrizione"]} for k, v in RITMI.items()}},
+            "lettura": self.ada.soldi.stato_lettura(),
             "collaudi": self.collaudi_stato(),
             "appunti": self.db.tutti("SELECT id, ts, tipo, titolo, testo FROM appunti ORDER BY id DESC LIMIT 8"),
             "libri": self.ada.studio.elenco_libri() if getattr(self.ada, "studio", None) else [],
@@ -331,6 +334,8 @@ def costruisci(llm=None, home=None, movimenti=None, token=None):
         if isinstance(llm, Claude) else llm
     ada.collaudo = Collaudo(ada, economico)
     ada.studio = Studio(ada, home / "libri")
+    # le notifiche di Revolut le legge Ada stessa ogni 2 minuti (se Termux:API c'è): non dipende dallo schermo né dal lavoro di Android
+    ada.lettore_notifiche = leggi_notifiche_termux if shutil.which("termux-notification-list") else None
     segreti = Segreti(home / "segreti.json")
     cfg = Config()
     salvati = segreti.leggi()

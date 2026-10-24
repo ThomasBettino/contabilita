@@ -49,6 +49,8 @@ PREDEFINITE = [
      "tipo": "codice", "ora": None, "ogni_min": 360, "prompt": None},
     {"nome": "lettura", "descrizione": "Ada legge a pezzi i libri che metti nella cartella ~/ada/libri e ne ricava appunti.",
      "tipo": "codice", "ora": None, "ogni_min": 240, "prompt": None},
+    {"nome": "notifiche", "descrizione": "Legge le notifiche di Revolut dal telefono ogni 2 minuti: non serve lo schermo né l'utente.",
+     "tipo": "codice", "ora": None, "ogni_min": 2, "prompt": None},
     {"nome": "fatture", "descrizione": "Aggiorna l'archivio fatture e riconosce i bonifici in arrivo sul conto.",
      "tipo": "codice", "ora": None, "ogni_min": 10, "prompt": None},
     {"nome": "miglioramento", "descrizione": "Rivede le segnalazioni aperte e migliora i prompt (solo se ce ne sono).",
@@ -147,7 +149,8 @@ class Pianificatore:
             esito = f"Errore: {type(e).__name__}"
             self.ada.log("sistema", "errore routine", f"{r['nome']}: {e}")
         self.db.esegui("UPDATE routine SET ultima=?, esito=? WHERE id=?", (adesso, str(esito)[:300], id_))
-        self.ada.log("routine", r["nome"], str(esito)[:200])
+        if not (r["nome"] == "notifiche" and str(esito)[:300] == r["esito"]):  # ogni 2 minuti: si registra solo se cambia qualcosa
+            self.ada.log("routine", r["nome"], str(esito)[:200])
         return str(esito)
 
     def _lavoro(self, r, manuale):
@@ -169,6 +172,26 @@ class Pianificatore:
         except ErroreFatture as e:
             return f"Non riesco a leggere l'archivio: {e}"
         return f"Archivio: {s['totale']} fatture ({s['nuove']} nuove). {inc}"[:250]
+
+    def _notifiche(self, manuale):
+        from ..revolut.ingest import leggi_e_salva
+        from ..revolut.store import apri
+        lettore = getattr(self.ada, "lettore_notifiche", None)
+        if not lettore:
+            return "Non disponibile: Termux:API non trovato su questo telefono."
+        db = apri(str(self.ada.soldi.percorso))
+        try:
+            esito = leggi_e_salva(db, lettore, self.adesso)
+        finally:
+            db.close()
+        if "errore" in esito:
+            return f"Errore: lettura notifiche non riuscita: {esito['errore']}"[:250]
+        if esito["nuovi"]:
+            fatture = self.db.uno("SELECT id FROM routine WHERE nome='fatture' AND attiva=1")
+            if fatture:  # subito: così l'avviso di un bonifico arriva in pochi minuti e non al giro successivo
+                self.esegui(fatture["id"])
+            return f"{esito['nuovi']} nuovi movimenti letti."
+        return "Nessuna novità."
 
     def _senza_limite(self, manuale):
         return None if manuale or not self.ada.sopra_limite() else "Saltata: limite di consumo di oggi raggiunto."

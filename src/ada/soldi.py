@@ -86,10 +86,48 @@ class Soldi:
             "ultimi": [{"quando": str(q), "importo": i, "controparte": c} for q, i, c in righe[:8]],
         }
 
+    def _leggi(self, sql, args=()):
+        if not self.percorso.exists():
+            return []
+        try:
+            db = sqlite3.connect(f"file:{self.percorso}?mode=ro", uri=True)
+            db.row_factory = sqlite3.Row
+            righe = [dict(r) for r in db.execute(sql, args).fetchall()]
+            db.close()
+            return righe
+        except sqlite3.Error:
+            return []
+
+    def lettura(self):
+        """Com'è andata l'ultima lettura delle notifiche (la scrive src.revolut.ingest), oppure None."""
+        r = self._leggi("SELECT quando, totale, revolut, nuovi, non_riconosciuti, errore FROM letture WHERE id=1")
+        return r[0] if r else None
+
+    def non_riconosciute(self, n=3):
+        return self._leggi("SELECT titolo, contenuto FROM non_riconosciute ORDER BY CAST(quando AS TEXT) DESC LIMIT ?", (n,))
+
+    def stato_lettura(self, adesso=None) -> str:
+        """Frase per Ada e per l'utente: la lettura delle notifiche funziona o no, e che cosa ha visto."""
+        l = self.lettura()
+        if not l:
+            return "Lettura notifiche Revolut: nessuna lettura registrata (la routine «notifiche» non è ancora partita o Termux:API non c'è)."
+        fa = max(0, int((adesso or time.time()) - l["quando"]) // 60)
+        if l["errore"]:
+            frase = f"Lettura notifiche Revolut: l'ultima ({fa} min fa) è FALLITA: {l['errore']}."
+        else:
+            frase = (f"Lettura notifiche Revolut: ultima {fa} min fa, funziona. In quel momento nella tendina c'erano "
+                     f"{l['revolut']} notifiche Revolut ({l['nuovi']} movimenti nuovi, {l['non_riconosciuti']} non riconosciute). "
+                     "Android mostra solo le notifiche ancora presenti: se una è stata cancellata prima della lettura non si recupera.")
+        nr = self.non_riconosciute()
+        if nr:
+            frase += " Ultime notifiche Revolut che non so leggere: " + " | ".join(
+                f"{(x['titolo'] or '')[:40]}: {(x['contenuto'] or '')[:80]}" for x in nr)
+        return frase
+
     def testo(self, periodo="mese") -> str:
         r = self.riepilogo(periodo)
         if not r["movimenti"]:
-            return "Nessun movimento registrato per il periodo richiesto."
+            return "Nessun movimento registrato per il periodo richiesto.\n" + self.stato_lettura()
         righe = [f"Periodo {r['periodo']}: {r['movimenti']} movimenti, entrate {r['entrate']:.2f} €, "
                  f"uscite {r['uscite']:.2f} €, saldo {r['saldo']:.2f} €.",
                  f"Ultimo movimento letto: {r['ultimi'][0]['quando']}.", "Uscite per categoria:"]
@@ -99,4 +137,5 @@ class Soldi:
         if r["non_categorizzati"]:
             righe.append("Senza categoria (finiti in Altro): " + ", ".join(
                 f"{e['nome']} {e['totale']:.2f} €" for e in r["non_categorizzati"]))
+        righe.append(self.stato_lettura())
         return "\n".join(righe)

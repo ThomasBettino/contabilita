@@ -170,6 +170,7 @@ function disegna(s) {
     h("span", null, h("b", null, nome(x.agente)), " · ", x.azione, x.dettaglio ? " — " + x.dettaglio : ""),
     h("span", { class: "meta" }, quando(x.ts)))) : h("div", { class: "vuoto" }, "Nessuna attività registrata."));
   disegnaSoldi(s.soldi);
+  $("soldi-lettura").textContent = s.lettura || "";
   disegnaRitmo(s.ritmo || {}, s.token_attivo);
   disegnaCollaudi(s.collaudi || []);
   disegnaStudio(s.appunti || [], s.libri || []);

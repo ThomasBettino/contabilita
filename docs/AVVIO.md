@@ -60,7 +60,7 @@ cat ~/ada.log
 
 **Se Ada non parte e nel log (`cat ~/ada.log`) c'è `cannot open scripts/ada.sh`, oppure `[1]+ Exit 2`:** sei sul ramo sbagliato. Su `main` il codice di Ada c'è solo dopo l'unione della richiesta #2; prima è sul ramo di lavoro. Controlla con `git branch --show-current` e, se non è `ccr-b35db874-occc4m`, torna con `git checkout ccr-b35db874-occc4m && git pull`. Non fare `git checkout main` finché la #2 non è unita.
 
-La lettura delle notifiche di Revolut riparte da sola dopo il riavvio (è un lavoro persistente: controlla con `termux-job-scheduler --pending`). Il collegamento dello schermo no: va rifatto con **Collega schermo**.
+La lettura delle notifiche di Revolut riparte da sola con Ada (routine «notifiche»); il vecchio lavoro ogni 15 minuti riparte anch'esso (controlla con `termux-job-scheduler --pending`). Il collegamento dello schermo no: va rifatto con **Collega schermo**.
 
 Tieni il telefono carico: sotto il 10% Android limita i servizi in background.
 
@@ -68,6 +68,7 @@ Tieni il telefono carico: sotto il 10% Android limita i servizi in background.
 Con l'hub acceso, Ada ha delle **routine** (le vedi in **Registro**, dove puoi spegnerle o lanciarle subito):
 - **Riepilogo della sera**, ogni giorno alle 21:00: spese, cose che aspettano te, miglioramenti. Lo trovi in chat e ricevi una notifica.
 - **Miglioramento**, ogni 3 ore (dipende dal ritmo, vedi sotto): se ci sono segnalazioni aperte, Ada corregge i prompt. Senza segnalazioni non fa nulla e non costa nulla.
+- **Notifiche Revolut**, ogni 2 minuti: Ada legge da sola le notifiche di Revolut (serve Termux:API con l'accesso alle notifiche, ma non lo schermo collegato né te). Quando arriva un movimento nuovo controlla subito le fatture, quindi l'avviso di un bonifico arriva in pochi minuti. In **Soldi, Conto** una riga dice quando ha letto l'ultima volta e se funziona; se fallisce, scrive il motivo. Android mostra solo le notifiche ancora presenti: non cancellare quelle di Revolut finché non sono passati un paio di minuti. Il vecchio lavoro ogni 15 minuti (`scripts/ingest.sh`) può restare: è un ripiego e non crea doppioni.
 - **Promemoria**, ogni 2 ore: ti ricorda con una notifica le decisioni ferme da più di 2 ore.
 
 **Lavoro continuo: ritmo, collaudi, studio e libri.** «Ogni secondo» non è né possibile né sostenibile (ogni pensiero di Ada costa token, quindi soldi), ma Ada lavora da sola per tutto il tempo in cui è accesa, a un **ritmo** che scegli in **Registro, Ritmo di lavoro** (serve il token di accesso, vedi sotto):
