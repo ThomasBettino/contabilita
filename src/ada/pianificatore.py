@@ -259,7 +259,12 @@ class Pianificatore:
         s = getattr(self.ada, "studio", None)
         if not s or not self.ada.llm.disponibile:
             return "Saltata: cervello non collegato."
-        return self._senza_limite(manuale) or s.lettura()
+        if (limite := self._senza_limite(manuale)):
+            return limite
+        esito = s.lettura()
+        if esito.startswith("Nessun libro da leggere"):  # tutto letto, o nessun libro: se ne sceglie uno di pubblico dominio
+            esito = s.scegli_libro() or esito
+        return esito
 
     def _miglioramento(self, manuale):
         if not self.db.uno("SELECT 1 AS x FROM segnalazioni WHERE stato='aperta'"):

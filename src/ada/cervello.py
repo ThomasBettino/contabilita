@@ -10,6 +10,7 @@ import os
 import re
 import threading
 import time
+import urllib.error
 
 from .agenda import Agenda
 from .agenti import AGENTI, SEED
@@ -44,6 +45,7 @@ MANDATO = """OBIETTIVO: costruire la migliore squadra possibile per gestire l'ut
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut (riepilogo_spese): le notifiche le legge da sola la routine «notifiche» ogni 2 minuti, senza schermo e senza che l'utente faccia niente; se manca un movimento, guarda prima la riga «Lettura notifiche Revolut» (riepilogo_spese o stato_sistema) e rispondi con quei fatti: chiedi all'utente di controllare il telefono solo se la lettura funziona e la notifica non compare (Android mostra solo le notifiche ancora presenti); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
 AGENDA: hai un'agenda interna con promemoria ed eventi (agenda_aggiungi, agenda_elenco, agenda_cambia): all'ora giusta il telefono avvisa l'utente da solo. Quando l'utente dice «ricordami…», «segna…», «domani alle 9…», aggiungi la voce subito (giorno AAAA-MM-GG e ora HH:MM, calcolati dalla data di adesso che trovi nel contesto), senza chiedere conferma se il dato c'è. Non è il Calendario di Google: non lo legge né lo scrive.
 REPARTO VENDITE: l'utente ha un'app sul telefono, «Andamento vendite» (preventivi, vendite, clienti da richiamare, pagamenti, agenda degli appuntamenti, fatturato, obiettivi; ha un suo Coach che registra a parole). La gestisce l'assistente clienti_vendite, che conosce a memoria tutte le sue funzioni. Quando l'utente ti racconta una novità di lavoro (vendita chiusa, preventivo fatto, cliente chiamato, test drive, appuntamento, acconto o saldo ricevuto, cliente perso): 1) subito avvisa_utente con un messaggio breve e generico (per esempio «Bravo, hai venduto! Parlo con il reparto vendite e aggiorno tutto subito.»), 2) delega a clienti_vendite con la frase dell'utente intera. Lui aggiorna l'app dallo schermo; se lo schermo non c'è, mette l'aggiornamento in coda e lo trovi in Agenda. Non dire mai che l'app è aggiornata se lui non lo conferma. Ogni novità finisce anche nel diario di lavoro (lo fa il reparto vendite con vendite_registra): alle 18:55 di ogni giorno parte da sola la routine che racconta all'utente quanti preventivi e vendite ha fatto oggi e cosa ha per domani, e lo fa da quel diario: per questo ogni novità che l'utente ti racconta va sempre passata al reparto vendite, anche se pensi di averla già sentita. Se l'utente ha attivato gli avvisi dall'app, quello che scrive direttamente nell'app (anche dal PC) ti arriva da solo come messaggio firmato: lo segni da sola nel diario e nell'agenda e lo comunichi tu all'utente. Se ti dice di averlo già scritto lui nell'app, non rifarlo nell'app.
+LIBRI: hai una libreria, la cartella dei libri sul telefono (file .txt, .md o .epub). La routine «lettura» ne legge un pezzo alla volta e ne ricava appunti e regole utili (si vedono in Registro). L'utente aggiunge i suoi libri dall'app: Registro, Prove e studio, «Aggiungi un libro»; è anche lì che può toglierli. Tu puoi cercare e scaricare da sola i testi di pubblico dominio (senza diritto d'autore) da Project Gutenberg con libri_cerca e libro_scarica: classici di strategia, filosofia pratica, negoziazione, economia, memorie. Non scaricare mai da altre parti libri recenti coperti da copyright, e non aggirare protezioni: se l'utente chiede un libro recente (per esempio «Le 48 leggi del potere»), digli onestamente che non puoi scaricarlo da sola, che se ne ha una copia sua (epub o txt) la può caricare lui con «Aggiungi un libro», e proponigli classici di pubblico dominio sugli stessi temi (per esempio «L'arte della guerra» di Sun Tzu, «Il Principe» di Machiavelli, «Meditazioni» di Marco Aurelio). Non dire mai di non avere una cartella dei libri: ce l'hai. Non puoi aprire file qualsiasi del telefono e non leggi un libro dallo schermo.
 NON COLLEGATI COME STRUMENTI: Gmail, Calendario di Google, WhatsApp, documenti (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
 try:
     MANUALE_VENDITE = (SEED / "clienti_vendite" / "manuale-app.md").read_text(encoding="utf-8")
@@ -117,6 +119,10 @@ T_ROUTINE = _tool("gestisci_routine",
 T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata finale e ora tocca all'utente premere il tasto.",
                  {"id": _N, "nota": _S}, ["id", "nota"])
 
+T_LIBRI_CERCA = _tool("libri_cerca", "Cerca libri di pubblico dominio (senza diritto d'autore) su Project Gutenberg, l'unica fonte da cui puoi scaricare. I libri recenti coperti da copyright non ci sono e non vanno cercati altrove. lingua = codice di due lettere (it, en…).",
+                      {"cosa": _S, "lingua": _S}, ["cosa"])
+T_LIBRO_SCARICA = _tool("libro_scarica", "Scarica un libro di Project Gutenberg (id preso da libri_cerca) nella tua cartella dei libri: poi lo leggi a pezzi con la routine di lettura.",
+                        {"id": _N}, ["id"])
 T_AGENDA_AGGIUNGI = _tool("agenda_aggiungi",
                           "Aggiunge un promemoria o un evento all'agenda dell'utente: all'ora giusta il telefono lo avvisa. quando = AAAA-MM-GG (tutto il giorno, avviso alle 08:00) oppure AAAA-MM-GG HH:MM. preavviso_min = quanti minuti prima avvisare (0 = all'ora).",
                           {"titolo": _S, "quando": _S, "tipo": {"type": "string", "enum": ["promemoria", "evento"]}, "note": _S,
@@ -138,11 +144,12 @@ T_VENDITE_REGISTRA = _tool("vendite_registra",
                             "cliente": _S, "dettaglio": _S, "giorno": _S, "in_app": {"type": "boolean"}, "id": _N}, ["azione"])
 
 STRUMENTI_AGENDA = [T_AGENDA_AGGIUNGI, T_AGENDA_ELENCO, T_AGENDA_CAMBIA]
+STRUMENTI_LIBRI = [T_LIBRI_CERCA, T_LIBRO_SCARICA]
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_FATTURE, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
 STRUMENTI_ADA = (STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + STRUMENTI_AGENDA
-                 + [T_DELEGA, T_MIGLIORA, T_REGOLA_PROMPT, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA, T_IDEA, T_REGOLA, T_AVVISA])
+                 + STRUMENTI_LIBRI + [T_DELEGA, T_MIGLIORA, T_REGOLA_PROMPT, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA, T_IDEA, T_REGOLA, T_AVVISA])
 STRUMENTI_QUOTIDIANO = STRUMENTI_ASSISTENTI + STRUMENTI_AGENDA
 # l'app vendite si aggiorna dallo schermo: stessi strumenti del telefono, senza quelli per gli acquisti
 STRUMENTI_VENDITE = (STRUMENTI_ASSISTENTI + [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI]
@@ -246,6 +253,10 @@ class Ada:
             righe.append(agenda)
         if chi in ("ada", "clienti_vendite") and (diario := self.diario.contesto()):
             righe.append(diario)
+        if chi == "ada" and getattr(self, "studio", None):
+            libri = self.studio.elenco_libri()
+            righe.append("LIBRERIA: " + ("; ".join(f"{l['nome']} ({l['percentuale']}% letto)" for l in libri[:8]) + (f" e altri {len(libri) - 8}" if len(libri) > 8 else "")
+                                         if libri else "vuota (nessun libro in cartella)."))
         if chi == "ada":
             routine = self.db.tutti("SELECT nome, ora, ogni_min, attiva FROM routine ORDER BY id")
             if routine:
@@ -361,10 +372,38 @@ class Ada:
                 return self._vendite_coda(chi, args)
             if nome == "vendite_registra":
                 return self._vendite_registra(chi, args)
+            if nome == "libri_cerca":
+                return self._libri_cerca(args)
+            if nome == "libro_scarica":
+                return self._libro_scarica(args)
         except Exception as e:  # lo strumento fallito non deve far cadere la conversazione
             self.log(chi, "errore", f"{nome}: {type(e).__name__} {e}")
             return f"Errore nello strumento {nome}: {e}"
         return "Strumento sconosciuto."
+
+    # ---------- libri ----------
+    def strumenti_libri(self):
+        return STRUMENTI_STUDIO + STRUMENTI_LIBRI
+
+    def _libri_cerca(self, args):
+        if not getattr(self, "studio", None):
+            return "La libreria non è disponibile."
+        try:
+            trovati = self.studio.cerca_pubblici(args.get("cosa"), args.get("lingua", ""))
+        except (urllib.error.URLError, OSError) as e:
+            return f"Project Gutenberg non risponde adesso ({type(e).__name__}): riprova più tardi, oppure l'utente può caricare lui il file dall'app."
+        if not trovati:
+            return "Nessun risultato su Project Gutenberg: contiene solo libri di pubblico dominio, i libri recenti non ci sono. Se l'utente ha una sua copia (txt, md, epub) può caricarla dall'app."
+        return "Libri trovati (usa libro_scarica con l'id):\n" + "\n".join(f"- id {i}: {t}" + (f", di {a}" if a else "") for i, t, a in trovati)
+
+    def _libro_scarica(self, args):
+        if not getattr(self, "studio", None):
+            return "La libreria non è disponibile."
+        try:
+            nome = self.studio.scarica_pubblico(args.get("id"))
+        except (urllib.error.URLError, OSError) as e:
+            return f"Project Gutenberg non risponde adesso ({type(e).__name__}): riprova più tardi."
+        return f"Scaricato e messo nella cartella dei libri: {nome}. La lettura a pezzi parte da sola con la routine «lettura»."
 
     # ---------- agenda, avvisi e coda del reparto vendite ----------
     def _agenda_aggiungi(self, chi, args):
@@ -865,7 +904,7 @@ class Ada:
         self.log("ada", "regola categoria", f"{parola} → {cat}")
         return f"D'ora in poi «{parola}» va in {cat}."
 
-    def lavoro_studio(self, prompt, tipo, titolo):
+    def lavoro_studio(self, prompt, tipo, titolo, strumenti=None):
         """Studio o lettura: Ada ragiona su un tema e salva gli appunti; niente chat, niente schermo, solo due strumenti."""
         if not self.llm.disponibile:
             return "Saltata: cervello non collegato."
@@ -873,7 +912,7 @@ class Ada:
             self.automatico = True
             try:
                 with self._lavora("ada", f"Studio: {titolo}"):
-                    risposta = self._ciclo("ada", [{"role": "user", "content": prompt}], STRUMENTI_STUDIO)
+                    risposta = self._ciclo("ada", [{"role": "user", "content": prompt}], strumenti or STRUMENTI_STUDIO)
             except ErroreLLM as e:
                 self.log("ada", "errore", e)
                 return f"Errore: {str(e)[:150]}"

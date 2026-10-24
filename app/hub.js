@@ -34,7 +34,8 @@ function chiediToken() {  // più chiamate insieme fanno una sola domanda
 
 async function api(path, dati) {
   const opz = { headers: { Authorization: "Bearer " + leggiToken() } };
-  if (dati !== undefined) { opz.method = "POST"; opz.headers["Content-Type"] = "application/json"; opz.body = JSON.stringify(dati); }
+  if (dati instanceof Blob) { opz.method = "POST"; opz.headers["Content-Type"] = "application/octet-stream"; opz.body = dati; }  // un file così com'è
+  else if (dati !== undefined) { opz.method = "POST"; opz.headers["Content-Type"] = "application/json"; opz.body = JSON.stringify(dati); }
   let r = await fetch(path, opz);
   if (r.status === 401) {
     const t = await chiediToken();
@@ -371,8 +372,16 @@ function disegnaCollaudi(collaudi) {
 
 function disegnaStudio(appunti, libri) {
   $("libri-nota").textContent = libri.length
-    ? "Libri in lettura: " + libri.map((l) => `${l.nome} (${l.percentuale}%)`).join(" · ")
-    : "Nessun libro: copia file .txt, .md o .epub nella cartella ~/ada/libri e Ada li legge a pezzi. Le lezioni sono la sua conoscenza, non citazioni dai libri.";
+    ? "Questi sono i libri di Ada. Le lezioni sui grandi pensatori sono la sua conoscenza, non citazioni dai libri."
+    : "Nessun libro per ora. Le lezioni sui grandi pensatori sono la sua conoscenza, non citazioni dai libri.";
+  svuota($("libri"), libri.map((l) => h("div", { class: "voce movimento" },
+    h("div", { class: "riga" }, h("span", null, l.nome, h("br"), h("span", { class: "meta" }, l.percentuale >= 100 ? "letto tutto" : `letto al ${l.percentuale}%`))),
+    h("button", { class: "x", type: "button", disabled: !tokenAttivo, title: "Togli questo libro", "aria-label": "Togli " + l.nome,
+      onclick: () => togliLibro(l.nome) }, "✕"))));
+  $("btn-libro").disabled = !tokenAttivo;
+  $("libri-aiuto").textContent = tokenAttivo
+    ? "Vanno bene file .txt, .md o .epub (massimo 20 MB). Ada ne legge un pezzo alla volta e ne ricava appunti. Se non ne metti, ne sceglie lei di pubblico dominio da Project Gutenberg. I libri recenti coperti da copyright non li scarica da sola: puoi caricare tu la tua copia."
+    : "Per aggiungere o togliere libri serve prima il token di accesso: in Termux scrivi «sh scripts/token.sh» (vedi docs/AVVIO.md).";
   svuota($("appunti"), appunti.length ? appunti.map((a) => h("div", { class: "voce" },
     h("div", null, h("span", { class: "tag" }, a.tipo)),
     h("b", null, a.titolo),
@@ -639,6 +648,21 @@ function mostraEsitoEstratto(r) {
          h("div", { class: "lista compatta" }, r.da_controllare.map(rigaMovimento))]
       : h("p", { class: "nota" }, "Tutto torna: ogni movimento del periodo è anche nell'estratto."));
 }
+
+async function togliLibro(nome) {
+  if (!confirm(`Tolgo «${nome}» dai libri di Ada? Il file viene cancellato dal telefono e si perde il punto a cui era arrivata.`)) return;
+  try { await api("/api/libri/rimuovi", { nome }); toast("Libro tolto"); aggiorna(); }
+  catch (err) { toast(err.message); }
+}
+$("btn-libro").addEventListener("click", () => $("libro-file").click());
+$("libro-file").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  if (f.size > 20000000) { toast("Il file è troppo grande (massimo 20 MB)."); return; }
+  toast("Carico il libro…");
+  try { const r = await api("/api/libri?nome=" + encodeURIComponent(f.name), f); toast(`Aggiunto: ${r.nome}`); aggiorna(); }
+  catch (err) { toast(err.message); }
+});
 
 $("btn-estratto").addEventListener("click", () => $("estratto-file").click());
 $("estratto-file").addEventListener("change", async (e) => {

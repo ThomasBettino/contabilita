@@ -19,7 +19,7 @@ from urllib.parse import parse_qs
 from .agenti import AGENTI, Squadra
 from .cervello import Ada, strumenti_di
 from .collaudo import Collaudo
-from .studio import Studio
+from .studio import MAX_CARICO, Studio
 from .db import DB, casa
 from . import aggiornamento
 from .fatture import HOST_SCRIPT, Archivio, ClienteScript, Config, ErroreFatture
@@ -179,13 +179,27 @@ def crea_handler(ctx):
             self._invia(200, f.read_bytes(), mimetypes.guess_type(f.name)[0] or "application/octet-stream")
 
         def do_POST(self):
+            self.query = parse_qs(self.path.partition("?")[2])
             self._api("POST", self.path.split("?")[0])
+
+        def _file(self, massimo):
+            """Un file caricato com'è (non JSON): si legge intero, oppure si scarta e si dice perché."""
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > massimo:
+                restante = n
+                while restante > 0:  # si legge e si butta, così chi invia riceve la risposta e non un errore di rete
+                    restante -= len(self.rfile.read(min(65536, restante)) or b"\0" * restante)
+                raise ValueError(f"Il file è troppo grande (massimo {massimo // 1_000_000} MB).")
+            return self.rfile.read(n)
 
         def _api(self, metodo, path):
             if not self._ok_accesso():
                 return self._invia(401, {"errore": "accesso negato"})
             try:
-                corpo = self._corpo(3_000_000 if path == "/api/estratto" else 65536) if metodo == "POST" else {}
+                if metodo == "POST" and path == "/api/libri":
+                    corpo = self._file(MAX_CARICO)
+                else:
+                    corpo = self._corpo(3_000_000 if path == "/api/estratto" else 65536) if metodo == "POST" else {}
                 self._invia(200, self._rotta(metodo, path, corpo))
             except LookupError as e:
                 self._invia(404, {"errore": str(e)})
@@ -246,6 +260,14 @@ def crea_handler(ctx):
                 except ErroreFatture as e:
                     raise ValueError(f"Script non raggiungibile: {e}")
                 return {"messaggio": msg}
+            if path in ("/api/libri", "/api/libri/rimuovi") and metodo == "POST":
+                if not ctx.token:  # scrive sul telefono e fa spendere token di lettura: mai senza token
+                    raise PermissionError("Per aggiungere o togliere libri serve prima un token di accesso (ADA_TOKEN: in Termux scrivi «sh scripts/token.sh», vedi docs/AVVIO.md).")
+                if path == "/api/libri":
+                    nome = ctx.ada.studio.aggiungi_libro((self.query.get("nome") or [""])[0], corpo)
+                    return {"nome": nome, "libri": ctx.ada.studio.elenco_libri()}
+                ctx.ada.studio.rimuovi_libro(corpo.get("nome", ""))
+                return {"libri": ctx.ada.studio.elenco_libri()}
             if metodo == "GET" and path == "/api/movimenti":
                 mese = (self.query.get("mese") or [time.strftime("%Y-%m")])[0]
                 return {"mese": mese, "movimenti": ctx.ada.soldi.elenco(mese)}
