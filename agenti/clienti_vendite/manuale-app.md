@@ -1,5 +1,5 @@
 ## MANUALE DELL'APP «ANDAMENTO VENDITE» (fa fede su qualsiasi «Stato attuale» del tuo prompt)
-Compilato leggendo il codice dell'app alla versione **v21**. La versione si legge sotto il titolo dell'app, accanto a «Sincronizzato alle HH:MM · v21». Se sullo schermo vedi un numero diverso, l'app è cambiata: dillo all'utente («l'app è passata a vXX, il mio manuale è fermo a v21: fammelo aggiornare») e non dare per certe le funzioni nuove.
+Compilato leggendo il codice dell'app alla versione **v22**. La versione si legge sotto il titolo dell'app, accanto a «Sincronizzato alle HH:MM · v22». Se sullo schermo vedi un numero diverso, l'app è cambiata: dillo all'utente («l'app è passata a vXX, il mio manuale è fermo a v22: fammelo aggiornare») e non dare per certe le funzioni nuove.
 
 ### Cos'è
 L'app personale di Thomas, venditore di auto in un concessionario di Bergamo (Citroën km0 soprattutto; anche Peugeot, Opel, Fiat, Jeep, DS), in regime forfettario. Tiene preventivi, vendite, clienti, pagamenti, appuntamenti, fatturato e obiettivi. I dati stanno nell'account dell'utente. È una pagina web aperta dal suo link (non un'app Android con il suo pacchetto). All'ingresso chiede email e password: **non scrivere mai la password**. Se vedi «Accedi» o «Crea il tuo accesso», fermati: l'utente deve entrare lui una volta, con «Resta collegato su questo dispositivo» spuntato.
@@ -12,7 +12,7 @@ L'app personale di Thomas, venditore di auto in un concessionario di Bergamo (Ci
 - **Numeri**: fatturato del mese (fisso + provvigioni + domeniche + premio), da mettere da parte per le tasse e netto, confronto col mese scorso, preventivi, conversione full drive, vendite totali e in contanti, giorni lavorati, ritmo preventivi al giorno (attuale e necessario), percorso preventivo→vendita, margine, grafico del mese, «Riepilogo per la fattura».
 - **Analisi**: cosa dicono i numeri, per marca, da dove arriva il cliente, test drive, permuta, perché li perdi, tempo per chiudere (questo mese o da sempre).
 - **Storico**: calendario dei giorni del mese (preventivi, vendite, riposo) e vendite del mese.
-- **Impostazioni**: obiettivi del mese (vendite, margine, giorni lavorativi, giorni abituali), marche, aspetto, piano provvigionale, recupero dati da una copia vecchia, accesso (cambio password, esci).
+- **Impostazioni**: obiettivi del mese (vendite, margine, giorni lavorativi, giorni abituali), marche, aspetto, piano provvigionale, **Avvisi ad Ada** (Gmail e codice di Ada, vedi sotto), recupero dati da una copia vecchia, accesso (cambio password, esci).
 
 ### Dati di una scheda (preventivo/cliente)
 Nome, telefono, marca, modello, prezzo proposto, provenienza (Salone, Internet, Telefono, Passaparola, Cliente già mio, Altro), test drive fatto, permuta, data del preventivo, **richiamo** (data), elenco chiamate (data e nota), note, test drive prenotato (data e ora).
@@ -56,3 +56,9 @@ Notifiche con avvisa_utente: testo breve e generico, **senza nomi di clienti né
 - Le cifre fiscali e i compensi vengono dalle Impostazioni dell'app: non ricalcolarli a memoria.
 - Non invii messaggi ai clienti: prepari il testo, la decisione di inviare è dell'utente.
 - I pagamenti dei clienti registrati nell'app sono **annotazioni** di ciò che l'utente ti riferisce: tu non muovi mai denaro.
+
+### Avvisi ad Ada (dal v22): l'app ti avverte da sola
+Se l'utente li ha attivati (Impostazioni, scheda **Avvisi ad Ada**: la sua Gmail e il codice che Ada gli mostra in Agenda), ogni cosa che si cambia nell'app **da quel dispositivo** manda alla sua Gmail un messaggio in codice, `[ADA] v1|tipo|cliente|dettaglio|data|ora|chiave|id|firma`. Ada lo legge dalle notifiche del telefono, controlla la firma, lo segna nel diario o in agenda e avvisa l'utente. Cosa parte: preventivo nuovo, vendita, cliente perso, chiamata aggiunta, test drive fatto, pagamento (solo il tipo, mai l'importo), appuntamento nuovo o spostato (anche il test drive prenotato), richiamo nuovo o cambiato. Un richiamo o un appuntamento tolto, fatto o annullato manda un messaggio «senza data» e Ada lo toglie dalla sua agenda.
+- **Anche le modifiche del Coach** partono (il Coach scrive come qualunque altra modifica): Ada le riconosce come già note e non le dice due volte. Non serve che tu aggiunga niente a mano nel diario per ciò che hai appena fatto fare al Coach.
+- **Cosa non parte:** i dati importati da una copia vecchia, le modifiche fatte da un dispositivo dove gli avvisi non sono attivi, le note e gli importi. Se l'app non ha il permesso Gmail o non risponde, i messaggi aspettano in coda (fino a 24 ore) e riprovano; lo stato si legge nella scheda.
+- **Per te:** se l'utente dice «non mi hai avvisato», guarda in Agenda, Avvisi automatici dall'app: lì Ada mostra l'ultimo messaggio ricevuto e quanti non erano leggibili. Il collegamento si prova col tasto «Salva e prova il collegamento» dell'app. Non chiedere mai il codice all'utente e non scriverlo in chat.

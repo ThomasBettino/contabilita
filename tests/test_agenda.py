@@ -345,7 +345,7 @@ class TestVenditeCoda(Base):
         c.ada._delega("clienti_vendite", "ho chiuso la vendita di Zanetti Emilio")
         sistema = c.ada.llm.chiamate[0]["system"]
         self.assertIn("MANUALE DELL'APP «ANDAMENTO VENDITE»", sistema)
-        for parola in ("segna venduto (obbligatori formula e margine)", "COME AGGIORNARE L'APP DALLO SCHERMO", "vendite_coda", "v21", "Coach"):
+        for parola in ("segna venduto (obbligatori formula e margine)", "COME AGGIORNARE L'APP DALLO SCHERMO", "vendite_coda", "v22", "Coach"):
             self.assertIn(parola, sistema)
         c.ada._delega("quotidiano", "cosa ho domani?")
         self.assertNotIn("MANUALE DELL'APP", c.ada.llm.chiamate[1]["system"])
