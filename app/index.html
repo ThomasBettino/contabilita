@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ada</title>
+<meta name="theme-color" content="#060A14">
+<meta name="color-scheme" content="dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="hub.css">
+</head>
+<body>
+<div class="sfondo" aria-hidden="true"></div>
+
+<header class="testa">
+  <div class="orb" id="orb" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="id">
+    <h1>Ada</h1>
+    <p id="stato-ada">Mi sto svegliando…</p>
+  </div>
+  <div class="kpi-testa">
+    <button class="collega" id="btn-collega" type="button" hidden>Collega schermo</button>
+    <button class="stop" id="btn-stop" type="button" hidden></button>
+    <button class="pillola" data-vai="approvazioni" id="pill-appr" hidden></button>
+  </div>
+</header>
+
+<main>
+  <section id="v-ada" class="vista">
+    <div class="msgs" id="msgs" aria-live="polite"></div>
+    <div class="suggerimenti" id="sugg">
+      <button type="button">Com'è andata oggi?</button>
+      <button type="button">Dove spendo di più?</button>
+      <button type="button">Cosa hai migliorato?</button>
+      <button type="button">Cosa devo decidere?</button>
+    </div>
+    <form class="scrivi" id="form-chat" autocomplete="off">
+      <input id="testo" type="text" placeholder="Scrivi ad Ada…" enterkeyhint="send" aria-label="Messaggio per Ada" maxlength="2000">
+      <button type="submit" id="invia" aria-label="Invia"><svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-6-8-2z"/></svg></button>
+    </form>
+  </section>
+
+  <section id="v-team" class="vista" hidden>
+    <h2>Il team di Ada</h2>
+    <p class="nota">Ognuno ha un prompt che Ada può migliorare. Tocca un assistente per vederlo o segnalare un problema.</p>
+    <div class="griglia" id="team"></div>
+  </section>
+
+  <section id="v-approvazioni" class="vista" hidden>
+    <h2>Da approvare</h2>
+    <p class="nota">Pagamenti, acquisti e modifiche grandi aspettano sempre te. Ada non muove mai denaro e non preme mai il tasto finale di un acquisto: quello lo premi tu.</p>
+    <div class="lista" id="appr"></div>
+  </section>
+
+  <section id="v-agenda" class="vista" hidden>
+    <h2>Agenda</h2>
+    <p class="nota" id="agenda-nota">Promemoria ed appuntamenti: all'ora giusta il telefono ti avvisa. Puoi anche dirlo ad Ada: «ricordami domani alle 9 di chiamare Zanetti».</p>
+    <div class="riga-azioni"><button class="primario" id="btn-ag-nuovo" type="button">＋ Nuova voce</button></div>
+    <form id="form-ag" class="feedback" hidden autocomplete="off">
+      <div class="segmento" id="ag-tipo" role="tablist">
+        <button type="button" data-t="promemoria" class="on">Promemoria</button>
+        <button type="button" data-t="evento">Appuntamento</button>
+      </div>
+      <input id="ag-titolo" type="text" maxlength="120" placeholder="Cosa (per esempio Chiamare Zanetti)" aria-label="Cosa" required>
+      <input id="ag-data" type="date" aria-label="Giorno" required>
+      <label class="check"><input type="checkbox" id="ag-tutto"> Tutto il giorno (avviso alle 8)</label>
+      <input id="ag-ora" type="time" value="09:00" aria-label="Ora">
+      <select id="ag-preavviso" aria-label="Quando avvisare">
+        <option value="0">Avvisami all'ora</option><option value="10">10 minuti prima</option><option value="30">30 minuti prima</option>
+        <option value="60">1 ora prima</option><option value="1440">1 giorno prima</option>
+      </select>
+      <select id="ag-ripeti" aria-label="Ripetizione">
+        <option value="">Una volta sola</option><option value="giornaliero">Ogni giorno</option>
+        <option value="settimanale">Ogni settimana</option><option value="mensile">Ogni mese</option>
+      </select>
+      <button class="primario" type="submit">Salva</button>
+    </form>
+    <div class="blocco" id="agenda-lista"></div>
+    <h3>Reparto vendite</h3>
+    <div class="blocco" id="vendite-blocco">
+      <p class="nota" id="vendite-nota"></p>
+      <form id="form-vendite" class="feedback" hidden autocomplete="off">
+        <input id="vendite-url" type="url" placeholder="Link dell'app (https://claude.ai/artifact/…)" aria-label="Link dell'app vendite">
+        <button class="primario" type="submit">Salva il link</button>
+      </form>
+      <div class="riga-azioni ripiega">
+        <a class="secondario" id="vendite-apri" target="_blank" rel="noopener" hidden>Apri l'app vendite</a>
+        <button class="secondario" id="vendite-cambia" type="button" hidden>Cambia link</button>
+      </div>
+      <div class="blocco" id="vendite-msg"></div>
+      <div class="blocco" id="vendite-oggi"></div>
+      <div class="lista" id="vendite-coda"></div>
+    </div>
+  </section>
+
+  <section id="v-registro" class="vista" hidden>
+    <h2>Registro</h2>
+    <div class="segmento scorri" id="seg-registro" role="tablist" aria-label="Sezioni del registro">
+      <button type="button" role="tab" data-r="lavoro" class="on">Lavoro</button>
+      <button type="button" role="tab" data-r="routine">Routine</button>
+      <button type="button" role="tab" data-r="prove">Prove</button>
+      <button type="button" role="tab" data-r="idee">Idee<b class="num" id="num-idee" hidden></b></button>
+      <button type="button" role="tab" data-r="modifiche">Modifiche</button>
+      <button type="button" role="tab" data-r="storico">Storico</button>
+    </div>
+
+    <div id="reg-lavoro" class="blocco">
+      <p class="nota">Quanto e quando lavora Ada da sola, quanto sta consumando e quale versione gira.</p>
+      <h3>Ritmo di lavoro</h3>
+      <p class="nota">Collauda sé stessa, studia, legge i tuoi libri e migliora il team anche quando non le scrivi.</p>
+      <div class="segmento" id="ritmo" role="tablist"></div>
+      <p class="nota" id="ritmo-nota"></p>
+      <h3>Prossimi lavori</h3>
+      <div class="lista compatta">
+        <div class="voce" id="timer-collaudo"></div>
+        <div class="voce" id="timer-studio"></div>
+        <div class="voce" id="timer-lettura"></div>
+      </div>
+      <h3>Consumo di oggi</h3>
+      <div class="voce" id="consumo"></div>
+      <h3>Miglioramento a comando</h3>
+      <p class="nota">Ada rivede il team, corregge i prompt e chiude le segnalazioni aperte, senza aspettare la prossima routine.</p>
+      <div class="riga-azioni"><button class="primario" id="btn-ciclo" type="button">Avvia ciclo di miglioramento</button></div>
+      <h3>Versione</h3>
+      <div class="blocco" id="sviluppo">
+        <p class="nota" id="versione"></p>
+        <div class="riga-azioni"><button class="secondario" id="btn-aggiorna" type="button">Aggiorna Ada</button></div>
+        <p class="nota" id="agg-nota"></p>
+      </div>
+    </div>
+
+    <div id="reg-routine" class="blocco" hidden>
+      <p class="nota">I lavori che Ada fa da sola a orari fissi. Ognuno ha un timer: «Esegui ora» lo lancia subito e fa ripartire il conto.</p>
+      <div id="routine" class="blocco"></div>
+    </div>
+
+    <div id="reg-prove" class="blocco" hidden>
+      <p class="nota">Come Ada si mette alla prova e impara: collaudi in simulazione, lezioni sui grandi pensatori e libri che le dai tu.</p>
+      <h3>Collaudi</h3>
+      <p class="nota">Un «utente» esigente la mette in difficoltà in una simulazione isolata: non tocca soldi, schermo né dati veri. Voto 7 o meno: diventa una segnalazione da correggere.</p>
+      <div class="lista" id="collaudi"></div>
+      <h3>Studio e letture</h3>
+      <p class="nota" id="libri-nota"></p>
+      <div class="lista compatta" id="libri"></div>
+      <div class="riga-azioni"><button class="secondario" id="btn-libro" type="button">Aggiungi un libro</button></div>
+      <input type="file" id="libro-file" accept=".txt,.md,.epub,text/plain,text/markdown,application/epub+zip" hidden>
+      <p class="nota" id="libri-aiuto">Vanno bene file .txt, .md o .epub (massimo 20 MB). Ada ne legge un pezzo alla volta e ne ricava appunti. Se non ne metti, ne sceglie lei di pubblico dominio da Project Gutenberg. Libri recenti coperti da copyright non li scarica da sola: puoi caricare tu la tua copia.</p>
+      <div class="lista" id="appunti"></div>
+    </div>
+
+    <div id="reg-idee" class="blocco" hidden>
+      <p class="nota">Funzioni nuove che richiedono codice: Ada ne propone al massimo una al giorno. Le proposte si approvano in «Approva».</p>
+      <div id="idee" class="blocco"></div>
+    </div>
+
+    <div id="reg-modifiche" class="blocco" hidden>
+      <p class="nota">Cosa ha già cambiato Ada da sola (prompt, regole, routine). Ogni modifica attiva si può annullare.</p>
+      <div id="migl" class="blocco"></div>
+    </div>
+
+    <div id="reg-storico" class="blocco" hidden>
+      <p class="nota">Le ultime cose fatte da Ada e dal team, errori compresi.</p>
+      <div class="lista compatta" id="att"></div>
+    </div>
+  </section>
+
+  <section id="v-soldi" class="vista" hidden>
+    <h2>Soldi</h2>
+    <div class="segmento" id="seg-soldi" role="tablist">
+      <button type="button" data-s="conto" class="on">Conto</button>
+      <button type="button" data-s="fatture">Fatture P.IVA</button>
+    </div>
+    <div id="soldi-conto" class="blocco">
+      <p class="nota" id="soldi-periodo"></p>
+      <p class="nota" id="soldi-lettura"></p>
+      <div class="tessere" id="tessere"></div>
+      <h3>Uscite per categoria</h3>
+      <div class="barre" id="cat"></div>
+      <h3>Dove va di più</h3>
+      <div class="lista compatta" id="esercenti"></div>
+      <h3>Movimenti</h3>
+      <p class="nota" id="mov-nota"></p>
+      <div class="riga-azioni ripiega">
+        <select id="mov-mese" aria-label="Mese dei movimenti"></select>
+        <button class="secondario" id="btn-mov-nuovo" type="button">＋ Aggiungi un pagamento</button>
+      </div>
+      <form id="form-mov" class="feedback" hidden autocomplete="off">
+        <div class="segmento" id="mov-tipo" role="tablist">
+          <button type="button" data-t="uscita" class="on">Uscita</button>
+          <button type="button" data-t="entrata">Entrata</button>
+        </div>
+        <input id="mov-importo" type="text" inputmode="decimal" placeholder="Importo (per esempio 12,50)" aria-label="Importo" required>
+        <input id="mov-desc" type="text" maxlength="80" placeholder="A chi o per cosa (per esempio Bar Roma)" aria-label="A chi o per cosa" required>
+        <input id="mov-data" type="date" aria-label="Data" required>
+        <button class="primario" type="submit">Salva</button>
+      </form>
+      <div class="lista compatta" id="movimenti"></div>
+      <h3>Estratto conto</h3>
+      <p class="nota" id="estratto-nota"></p>
+      <div class="riga-azioni"><button class="secondario" id="btn-estratto" type="button">Carica estratto conto (CSV)</button></div>
+      <input type="file" id="estratto-file" accept=".csv,.txt,text/csv,text/plain" hidden>
+      <div class="blocco" id="estratto-esito"></div>
+    </div>
+    <div id="soldi-fatture" class="blocco" hidden>
+      <p class="nota" id="fatt-nota"></p>
+      <form id="form-fatture" class="feedback" hidden autocomplete="off">
+        <input id="fatt-url" type="url" placeholder="Indirizzo dello script (https://script.google.com/…)" aria-label="Indirizzo dello script">
+        <input id="fatt-token" type="password" placeholder="Codice segreto" aria-label="Codice segreto" autocomplete="off">
+        <button class="primario" type="submit">Collega l'archivio</button>
+      </form>
+      <div class="tessere" id="fatt-tessere"></div>
+      <div class="riga-azioni"><button class="secondario" id="btn-sync-fatture" type="button">Sincronizza ora</button></div>
+      <div id="fatt-archivio" class="blocco" hidden>
+        <h3>Archivio fatture</h3>
+        <div class="lista" id="fatt-lista"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="barra" aria-label="Sezioni">
+  <button data-vai="ada" class="attiva"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Ada</span></button>
+  <button data-vai="team"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M2 19c0-3 3-5 6-5s6 2 6 5M14.5 15.2c2.8-.6 7.5.4 7.5 3.8"/></svg><span>Team</span></button>
+  <button data-vai="agenda"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Agenda</span><b id="badge-agenda" hidden></b></button>
+  <button data-vai="approvazioni"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span>Approva</span><b id="badge-appr" hidden></b></button>
+  <button data-vai="registro"><svg viewBox="0 0 24 24"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg><span>Registro</span></button>
+  <button data-vai="soldi"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 8-9M3 21h18"/></svg><span>Soldi</span></button>
+</nav>
+
+<dialog id="dlg">
+  <form method="dialog" class="dlg-chiudi"><button aria-label="Chiudi">✕</button></form>
+  <div class="ag-testa">
+    <div class="ag-avatar" id="ag-avatar"><span id="ag-emoji" aria-hidden="true"></span></div>
+    <div class="ag-nome"><h3 id="dlg-titolo"></h3><p class="nota" id="dlg-descr"></p></div>
+  </div>
+  <div class="ag-ora" id="ag-ora" aria-live="polite"></div>
+  <h4>Ultime attività</h4>
+  <div class="ag-storia" id="ag-storia"></div>
+  <h4>Cosa sa fare</h4>
+  <div class="ag-strumenti" id="ag-strumenti"></div>
+  <div id="ag-segn" hidden>
+    <h4>Segnalazioni aperte</h4>
+    <div class="lista compatta" id="ag-segn-lista"></div>
+  </div>
+  <details class="ag-prompt">
+    <summary>Come è istruito (il suo prompt)</summary>
+    <pre id="dlg-prompt"></pre>
+    <div id="dlg-migl" class="lista compatta"></div>
+  </details>
+  <form id="form-feedback" class="feedback">
+    <textarea id="fb-testo" rows="3" placeholder="Cosa non va? Ada lo annota e corregge il prompt se serve." maxlength="500"></textarea>
+    <button class="primario" type="submit">Segnala ad Ada</button>
+  </form>
+</dialog>
+
+<div id="toast" role="status"></div>
+<script src="hub.js"></script>
+</body>
+</html>
