@@ -16,7 +16,7 @@ function h(tag, attrs, ...figli) {
   for (const f of figli.flat()) if (f != null) el.append(f.nodeType ? f : document.createTextNode(String(f)));
   return el;
 }
-const svuota = (el, ...nuovi) => el.replaceChildren(...nuovi.flat().filter((x) => x != null && x !== false));
+const svuota = (el, ...nuovi) => el.replaceChildren(...nuovi.flat(Infinity).filter((x) => x != null && x !== false));
 
 function leggiToken() { try { return localStorage.getItem("ada_token") || ""; } catch (e) { return ""; } }
 function salvaToken(t) { try { localStorage.setItem("ada_token", t); } catch (e) { /* storage bloccato */ } }
@@ -185,6 +185,9 @@ function disegna(s) {
   disegnaSoldi(s.soldi);
   disegnaMovimentiNote();
   caricaMovimenti();
+  const nAg = ((s.agenda || {}).scaduti || 0) + ((s.vendite || {}).in_coda || 0);
+  $("badge-agenda").hidden = !nAg; $("badge-agenda").textContent = nAg;
+  caricaAgenda(); caricaVendite();
   $("soldi-lettura").textContent = s.lettura || "";
   disegnaRitmo(s.ritmo || {}, s.token_attivo);
   disegnaCollaudi(s.collaudi || []);
@@ -422,9 +425,11 @@ const ETICHETTE_ROUTINE = {
   notifiche: "Lettura notifiche Revolut", fatture: "Archivio fatture e bonifici", miglioria_quotidiana: "Miglioria del giorno",
   miglioramento: "Correzione dei prompt", collaudo: "Collaudo di Ada", studio: "Studio dei grandi pensatori", lettura: "Lettura dei tuoi libri",
   riepilogo_sera: "Riepilogo della sera", promemoria_approvazioni: "Promemoria delle approvazioni",
+  agenda: "Avvisi dell'agenda", agenda_mattina: "Agenda del mattino",
 };
 const GRUPPI_ROUTINE = [
   ["Soldi", ["notifiche", "fatture"]],
+  ["Agenda", ["agenda", "agenda_mattina"]],
   ["Ada che migliora sé stessa", ["miglioria_quotidiana", "miglioramento", "collaudo", "studio", "lettura"]],
   ["Riepiloghi e promemoria", ["riepilogo_sera", "promemoria_approvazioni"]],
 ];
@@ -667,6 +672,98 @@ $("btn-stop").addEventListener("click", async () => {
   catch (e) { toast(e.message); }
 });
 
+/* ---------- agenda e reparto vendite ---------- */
+const GIORNI_IT = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+function etichettaGiorno(iso, oggi) {
+  const d = new Date(iso + "T12:00:00"), delta = Math.round((d - new Date(oggi + "T12:00:00")) / 864e5);
+  return (delta === 0 ? "Oggi" : delta === 1 ? "Domani" : delta === -1 ? "Ieri" : GIORNI_IT[d.getDay()]) + ` ${d.getDate()}/${d.getMonth() + 1}`;
+}
+const piuGiorni = (iso, n) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${due2(d.getMonth() + 1)}-${due2(d.getDate())}`; };
+
+function cartaVoce(v, oggi) {
+  const agisci = (azione, extra, msg) => async () => {
+    try { await api("/api/agenda/" + v.id, { azione, ...extra }); if (msg) toast(msg); caricaAgenda(); aggiorna(); }
+    catch (e) { toast(e.message); }
+  };
+  const scaduta = v.giorno < oggi;
+  return h("div", { class: "voce agenda" + (v.stato === "fatto" ? " fatta" : "") },
+    h("div", { class: "riga" },
+      h("span", null, h("b", { class: "ora" }, v.ora || "tutto il giorno"), " ", h("b", null, v.titolo)),
+      h("span", null, h("span", { class: "tag " + (v.tipo === "evento" ? "ok" : "") }, v.tipo === "evento" ? "appuntamento" : "promemoria"),
+        v.ripeti ? [" ", h("span", { class: "tag" }, v.ripeti)] : null)),
+    v.note ? h("span", { class: "meta" }, v.note) : null,
+    v.preavviso ? h("span", { class: "meta" }, `Avviso ${v.preavviso >= 1440 ? v.preavviso / 1440 + " giorno" : v.preavviso >= 60 ? v.preavviso / 60 + " ora" : v.preavviso + " minuti"} prima`) : null,
+    v.stato === "fatto" ? null : h("div", { class: "azioni ripiega" },
+      h("button", { class: "secondario", type: "button", onclick: agisci("fatto", {}, "Fatto") }, "✓ Fatto"),
+      h("button", { class: "secondario", type: "button", onclick: agisci("sposta", { quando: piuGiorni(scaduta ? oggi : v.giorno, 1) + (v.ora ? " " + v.ora : "") }, "Spostato a domani") }, "Domani"),
+      h("button", { class: "secondario", type: "button", onclick: () => { if (confirm(`Tolgo «${v.titolo}» dall'agenda?`)) agisci("elimina", {}, "Tolto")(); } }, "Elimina")));
+}
+
+async function caricaAgenda() {
+  try {
+    const j = await api("/api/agenda?giorni=30");
+    const giorni = {};
+    j.prossimi.forEach((v) => (giorni[v.giorno] ||= []).push(v));
+    svuota($("agenda-lista"),
+      j.scaduti.length ? h("div", { class: "blocco" }, h("h3", null, `Da chiudere o spostare (${j.scaduti.length})`),
+        h("div", { class: "lista" }, j.scaduti.map((v) => cartaVoce(v, j.oggi)))) : null,
+      Object.keys(giorni).sort().map((g) => h("div", { class: "blocco" }, h("h3", null, etichettaGiorno(g, j.oggi)),
+        h("div", { class: "lista" }, giorni[g].map((v) => cartaVoce(v, j.oggi))))),
+      !j.scaduti.length && !j.prossimi.length ? h("div", { class: "vuoto" }, "Niente in agenda nei prossimi 30 giorni.") : null,
+      j.fatti.length ? h("details", { class: "gruppo" }, h("summary", null, `Fatti di recente (${j.fatti.length})`),
+        h("div", { class: "lista" }, j.fatti.map((v) => cartaVoce(v, j.oggi)))) : null);
+  } catch (e) { /* lo stato in alto già dice che Ada non risponde */ }
+}
+
+const proximaOra = () => { const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0); return `${due2(d.getHours())}:00`; };
+$("ag-data").value = $("ag-data").min = oggiLocale();
+$("ag-ora").value = proximaOra();
+$("btn-ag-nuovo").addEventListener("click", () => { $("form-ag").hidden = !$("form-ag").hidden; $("ag-data").value = oggiLocale(); $("ag-ora").value = proximaOra(); if (!$("form-ag").hidden) $("ag-titolo").focus(); });
+$("ag-tipo").addEventListener("click", (e) => {
+  if (!e.target.dataset.t) return;
+  $("ag-tipo").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.target));
+});
+$("ag-tutto").addEventListener("change", () => { $("ag-ora").hidden = $("ag-tutto").checked; });
+$("form-ag").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const tutto = $("ag-tutto").checked;
+  try {
+    await api("/api/agenda", { titolo: $("ag-titolo").value, quando: $("ag-data").value + (tutto ? "" : " " + $("ag-ora").value),
+      tipo: $("ag-tipo").querySelector("button.on").dataset.t, ripeti: $("ag-ripeti").value, preavviso_min: tutto ? 0 : +$("ag-preavviso").value });
+    toast("In agenda"); $("ag-titolo").value = ""; $("form-ag").hidden = true; caricaAgenda(); aggiorna();
+  } catch (err) { toast(err.message); }
+});
+
+let urlVendite = "";
+async function caricaVendite() {
+  let j;
+  try { j = await api("/api/vendite"); } catch (e) { return; }
+  urlVendite = j.url;
+  $("form-vendite").hidden = !!j.url && $("vendite-cambia").dataset.aperto !== "1";
+  $("vendite-apri").hidden = $("vendite-cambia").hidden = !j.url;
+  if (j.url) $("vendite-apri").href = j.url;
+  $("vendite-nota").textContent = j.url
+    ? "Quando racconti una vendita, un preventivo o una chiamata, il reparto vendite aggiorna l'app dal telefono. Se lo schermo non è collegato, l'aggiornamento resta qui in coda."
+    : "Incolla il link dell'app «Andamento vendite» (lo trovi nel menu Condividi dell'app): serve ad Ada per aprirla e aggiornarla.";
+  svuota($("vendite-coda"), j.coda.length ? [h("h3", null, `Da riportare nell'app (${j.coda.length})`), j.coda.map((c) => h("div", { class: "voce" },
+    h("b", null, c.riassunto),
+    h("span", { class: "meta" }, "Frase per il Coach dell'app: " + c.frase),
+    h("div", { class: "azioni ripiega" },
+      h("button", { class: "primario", type: "button", onclick: async () => {
+        try { await navigator.clipboard.writeText(c.frase); toast("Frase copiata: incollala nel Coach dell'app"); } catch (e) { toast("Non riesco a copiare: selezionala a mano"); }
+        if (urlVendite) window.open(urlVendite, "_blank", "noopener");
+      } }, "Copia e apri l'app"),
+      h("button", { class: "secondario", type: "button", onclick: async () => { try { await api("/api/vendite/coda/" + c.id, { azione: "fatto" }); toast("Segnato come riportato"); caricaVendite(); aggiorna(); } catch (e) { toast(e.message); } } }, "Fatto"),
+      h("button", { class: "secondario", type: "button", onclick: async () => { try { await api("/api/vendite/coda/" + c.id, { azione: "elimina" }); caricaVendite(); aggiorna(); } catch (e) { toast(e.message); } } }, "Elimina")))
+  )] : h("div", { class: "vuoto" }, j.url ? "Niente da riportare: l'app è aggiornata." : ""));
+}
+$("vendite-cambia").addEventListener("click", () => { $("vendite-cambia").dataset.aperto = "1"; $("form-vendite").hidden = false; $("vendite-url").value = urlVendite; $("vendite-url").focus(); });
+$("form-vendite").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try { await api("/api/vendite/impostazioni", { url: $("vendite-url").value }); toast("Link salvato"); $("vendite-cambia").dataset.aperto = ""; caricaVendite(); aggiorna(); }
+  catch (err) { toast(err.message); }
+});
+
 /* ---------- dettaglio agente ---------- */
 const ICONE_AGENTE = { ada: "✨", contabilita_piva: "🧾", contabilita_privata: "💳", quotidiano: "🗓️", sviluppo: "🛠️",
   clienti_vendite: "🤝", acquisti: "🛒", revisore: "🔍", collaudatore: "🎭" };
@@ -674,7 +771,8 @@ const NOMI_STRUMENTI = {
   riepilogo_spese: "Legge le spese", aggiungi_regola_prompt: "Aggiunge una regola a un prompt", riepilogo_fatture: "Legge le fatture", annota_segnalazione: "Annota i problemi",
   richiedi_approvazione: "Chiede il tuo ok", telefono_collega: "Collega lo schermo", telefono_schermo: "Guarda lo schermo",
   telefono_tocca: "Tocca lo schermo", telefono_scrivi: "Scrive sullo schermo", telefono_scorri: "Scorre le pagine",
-  telefono_vai: "Indietro e home", telefono_apri: "Apre app e pagine", proponi_acquisto: "Propone acquisti",
+  telefono_vai: "Indietro e home", telefono_apri: "Apre app e pagine", agenda_aggiungi: "Aggiunge promemoria e eventi", agenda_elenco: "Legge l'agenda",
+  agenda_cambia: "Sposta o chiude voci dell'agenda", avvisa_utente: "Manda notifiche sul telefono", vendite_coda: "Mette in coda gli aggiornamenti dell'app vendite", proponi_acquisto: "Propone acquisti",
   acquisto_pronto: "Prepara l'ordine", delega: "Affida compiti al team", migliora_prompt: "Migliora i prompt",
   chiudi_segnalazione: "Chiude le segnalazioni", gestisci_routine: "Gestisce le routine", stato_sistema: "Controlla lo stato",
   fattura_incassata: "Segna le fatture incassate", proponi_idea: "Propone funzioni nuove", regola_categoria: "Impara le categorie di spesa",
@@ -687,7 +785,9 @@ const FRASI_ATTIVITA = {
   "regola categoria": "Ha imparato una categoria", "ordine pronto": "Ha preparato un ordine", routine: "Ha eseguito una routine",
   "routine creata": "Ha creato una routine", "routine modificata": "Ha modificato una routine",
   collaudo: "Ha fatto un collaudo", "appunti (lezione)": "Ha studiato una lezione", "appunti (lettura)": "Ha letto un pezzo di libro",
-  "ritmo di lavoro": "Ha scelto il ritmo di lavoro",
+  "ritmo di lavoro": "Ha scelto il ritmo di lavoro", agenda: "Ha usato l'agenda", "notifica inviata": "Ha mandato una notifica",
+  "coda vendite": "Ha messo in coda un aggiornamento dell'app vendite", "app vendite": "Impostazioni dell'app vendite",
+  "movimento aggiunto": "Ha aggiunto un movimento", "movimento rimosso": "Ha tolto un movimento", "estratto conto": "Ha caricato un estratto conto",
 };
 const durata = (da) => { const s = Math.max(0, Math.floor(Date.now() / 1000 - da)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`; };
 

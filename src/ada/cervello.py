@@ -11,7 +11,8 @@ import re
 import threading
 import time
 
-from .agenti import AGENTI
+from .agenda import Agenda
+from .agenti import AGENTI, SEED
 from .soldi import NOMI_CATEGORIE
 from .llm import ErroreLLM
 from .pianificatore import PREDEFINITE, RITMI, prossima_esecuzione
@@ -38,7 +39,13 @@ IDEE_APERTE = "('proposta','approvata')"
 MANDATO = """OBIETTIVO: costruire la migliore squadra possibile per gestire l'utente: ogni giorno più capace, più affidabile, più utile. Lavori sempre, non solo quando ti scrive: collaudi, studi, migliori. COME RAGIONI: da scienziato (ipotesi, prova, misura, correggi), da matematico (definisci con precisione, controlla i casi limite, rifai i conti), da grande venditore (ascolta il bisogno vero, proponi il passo successivo concreto). COME LAVORI: sei il capo e decidi tu. Non chiedere «quale vuoi che faccia partire»: scegli la cosa più utile entro i tuoi poteri, falla, poi riferisci in poche righe cosa hai fatto e perché. Chiedi all'utente solo ciò che solo lui può fare (collegare lo schermo, darti un dato che manca), le decisioni sui soldi e le modifiche grandi. Se vedi un problema o un miglioramento alla portata dei tuoi strumenti (prompt, routine, regole di categoria, segnalazioni), applicalo senza aspettare. Per correggere un prompt usa aggiungi_regola_prompt, una regola breve alla volta: è il modo più semplice e sicuro; migliora_prompt (riscrittura intera) solo se serve davvero. Se una funzione nuova richiede codice, usa proponi_idea: è una proposta che l'utente approva. Se dici che fai qualcosa, chiama subito lo strumento: non promettere e basta. Il tetto di consumo riguarda solo le routine automatiche: non limitare mai per quel motivo il lavoro che ti chiede l'utente. Se una opzione è chiaramente la migliore, non elencarne tre."""
 
 CAPACITA = """CAPACITÀ COLLEGATE OGGI: archivio fatture P.IVA collegato allo script Google (riepilogo_fatture; l'archiviazione dei Word mandati a Giulia la fa già lo script); leggere i movimenti Revolut (riepilogo_spese): le notifiche le legge da sola la routine «notifiche» ogni 2 minuti, senza schermo e senza che l'utente faccia niente; se manca un movimento, guarda prima la riga «Lettura notifiche Revolut» (riepilogo_spese o stato_sistema) e rispondi con quei fatti: chiedi all'utente di controllare il telefono solo se la lettura funziona e la notifica non compare (Android mostra solo le notifiche ancora presenti); vedere cosa aspetta l'utente, le segnalazioni, le routine e i consumi (stato_sistema); delegare agli assistenti; annotare e chiudere segnalazioni; migliorare i prompt; chiedere approvazioni.
-NON COLLEGATI COME STRUMENTI: Gmail, Calendario, WhatsApp, documenti e fatture (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
+AGENDA: hai un'agenda interna con promemoria ed eventi (agenda_aggiungi, agenda_elenco, agenda_cambia): all'ora giusta il telefono avvisa l'utente da solo. Quando l'utente dice «ricordami…», «segna…», «domani alle 9…», aggiungi la voce subito (giorno AAAA-MM-GG e ora HH:MM, calcolati dalla data di adesso che trovi nel contesto), senza chiedere conferma se il dato c'è. Non è il Calendario di Google: non lo legge né lo scrive.
+REPARTO VENDITE: l'utente ha un'app sul telefono, «Andamento vendite» (preventivi, vendite, clienti da richiamare, pagamenti, agenda degli appuntamenti, fatturato, obiettivi; ha un suo Coach che registra a parole). La gestisce l'assistente clienti_vendite, che conosce a memoria tutte le sue funzioni. Quando l'utente ti racconta una novità di lavoro (vendita chiusa, preventivo fatto, cliente chiamato, test drive, appuntamento, acconto o saldo ricevuto, cliente perso): 1) subito avvisa_utente con un messaggio breve e generico (per esempio «Bravo, hai venduto! Parlo con il reparto vendite e aggiorno tutto subito.»), 2) delega a clienti_vendite con la frase dell'utente intera. Lui aggiorna l'app dallo schermo; se lo schermo non c'è, mette l'aggiornamento in coda e lo trovi in Agenda. Non dire mai che l'app è aggiornata se lui non lo conferma.
+NON COLLEGATI COME STRUMENTI: Gmail, Calendario di Google, WhatsApp, documenti (si possono usare solo attraverso lo schermo del telefono, se è collegato). Non fingere di usarli."""
+try:
+    MANUALE_VENDITE = (SEED / "clienti_vendite" / "manuale-app.md").read_text(encoding="utf-8")
+except OSError:
+    MANUALE_VENDITE = ""
 TELEFONO_SI = "TELEFONO: collegato. Puoi guardare e usare lo schermo con gli strumenti telefono_*. Le app finanziarie sono protette e il tasto finale di acquisto/pagamento lo preme sempre l'utente."
 TELEFONO_NO = "TELEFONO: NON collegato (manca il debug wireless, vedi docs/TELEFONO.md). Non puoi usare lo schermo: dillo all'utente se serve."
 
@@ -107,11 +114,32 @@ T_ROUTINE = _tool("gestisci_routine",
 T_PRONTO = _tool("acquisto_pronto", "Segnala che l'ordine è alla schermata finale e ora tocca all'utente premere il tasto.",
                  {"id": _N, "nota": _S}, ["id", "nota"])
 
+T_AGENDA_AGGIUNGI = _tool("agenda_aggiungi",
+                          "Aggiunge un promemoria o un evento all'agenda dell'utente: all'ora giusta il telefono lo avvisa. quando = AAAA-MM-GG (tutto il giorno, avviso alle 08:00) oppure AAAA-MM-GG HH:MM. preavviso_min = quanti minuti prima avvisare (0 = all'ora).",
+                          {"titolo": _S, "quando": _S, "tipo": {"type": "string", "enum": ["promemoria", "evento"]}, "note": _S,
+                           "ripeti": {"type": "string", "enum": ["", "giornaliero", "settimanale", "mensile"]}, "preavviso_min": _N},
+                          ["titolo", "quando"])
+T_AGENDA_ELENCO = _tool("agenda_elenco", "Mostra l'agenda: voci scadute da chiudere e prossimi giorni (con gli id).", {"giorni": _N}, [])
+T_AGENDA_CAMBIA = _tool("agenda_cambia", "Cambia una voce dell'agenda (id da agenda_elenco): sposta (nuovo quando), rinomina (nuovo titolo), fatto o elimina.",
+                        {"id": _N, "azione": {"type": "string", "enum": ["sposta", "rinomina", "fatto", "elimina"]}, "quando": _S, "titolo": _S},
+                        ["id", "azione"])
+T_AVVISA = _tool("avvisa_utente", "Manda una notifica breve sul telefono dell'utente (al massimo 6 all'ora). Titolo e testo generici: niente importi, nomi di clienti o dati sensibili sul blocco schermo.",
+                 {"titolo": _S, "testo": _S}, ["titolo", "testo"])
+T_VENDITE_CODA = _tool("vendite_coda",
+                       "Coda degli aggiornamenti da riportare nell'app Andamento vendite quando non puoi farlo dallo schermo. aggiungi = frase (da incollare nel Coach dell'app, senza accenti) e riassunto (per l'utente); elenco; fatto = id.",
+                       {"azione": {"type": "string", "enum": ["aggiungi", "elenco", "fatto"]}, "frase": _S, "riassunto": _S, "id": _N}, ["azione"])
+
+STRUMENTI_AGENDA = [T_AGENDA_AGGIUNGI, T_AGENDA_ELENCO, T_AGENDA_CAMBIA]
 STRUMENTI_TELEFONO = [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI, T_PROPONI, T_PRONTO]
 STRUMENTI_ASSISTENTI = [T_RIEPILOGO, T_FATTURE, T_SEGNALA, T_APPROVAZIONE]
 STRUMENTI_ACQUISTI = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO
-STRUMENTI_ADA = STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + [T_DELEGA, T_MIGLIORA, T_REGOLA_PROMPT, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA, T_IDEA, T_REGOLA]
-GIRI = {"ada": 12, "acquisti": 30}  # il telefono richiede molti passaggi
+STRUMENTI_ADA = (STRUMENTI_ASSISTENTI + STRUMENTI_TELEFONO + STRUMENTI_AGENDA
+                 + [T_DELEGA, T_MIGLIORA, T_REGOLA_PROMPT, T_CHIUDI, T_ROUTINE, T_STATO, T_INCASSATA, T_IDEA, T_REGOLA, T_AVVISA])
+STRUMENTI_QUOTIDIANO = STRUMENTI_ASSISTENTI + STRUMENTI_AGENDA
+# l'app vendite si aggiorna dallo schermo: stessi strumenti del telefono, senza quelli per gli acquisti
+STRUMENTI_VENDITE = (STRUMENTI_ASSISTENTI + [T_COLLEGA, T_SCHERMO, T_TOCCA, T_SCRIVI, T_SCORRI, T_VAI, T_APRI]
+                     + STRUMENTI_AGENDA + [T_AVVISA, T_VENDITE_CODA])
+GIRI = {"ada": 12, "acquisti": 30, "clienti_vendite": 30}  # il telefono richiede molti passaggi
 
 
 STRUMENTI_STUDIO = [T_REGOLA_PROMPT, T_IDEA]  # durante lo studio Ada può solo annotare una regola o proporre un'idea
@@ -120,7 +148,8 @@ STRUMENTI_STUDIO = [T_REGOLA_PROMPT, T_IDEA]  # durante lo studio Ada può solo 
 def strumenti_di(chi):
     if chi == "collaudatore":
         return []  # parla soltanto: non agisce mai
-    return {"ada": STRUMENTI_ADA, "acquisti": STRUMENTI_ACQUISTI}.get(chi, STRUMENTI_ASSISTENTI)
+    return {"ada": STRUMENTI_ADA, "acquisti": STRUMENTI_ACQUISTI, "quotidiano": STRUMENTI_QUOTIDIANO,
+            "clienti_vendite": STRUMENTI_VENDITE}.get(chi, STRUMENTI_ASSISTENTI)
 
 
 def classifica(vecchio: str, nuovo: str) -> str:
@@ -138,6 +167,7 @@ class Ada:
         self.automatico = False   # vero durante una routine: niente schermo senza l'utente
         self.notifica = None      # funzione(titolo, testo, id) impostata dal server
         self.archivio = None      # archivio fatture P.IVA (src/ada/fatture.py)
+        self.agenda = Agenda(db)  # promemoria ed eventi con avviso sul telefono
         self.soldi.regole = {r["parola"]: r["categoria"] for r in self.db.tutti("SELECT parola, categoria FROM regole_categoria")}
 
     # ---------- utilità ----------
@@ -195,9 +225,15 @@ class Ada:
 
     def _contesto(self, chi):
         aperte = self.db.tutti("SELECT id, agente, problema FROM segnalazioni WHERE stato='aperta' ORDER BY id LIMIT 10")
-        stabili = [MANDATO if chi == "ada" else "", CAPACITA]  # uguali a ogni richiesta: finiscono in cache
-        righe = [f"Oggi è {time.strftime('%Y-%m-%d %H:%M')}.",
+        stabili = [MANDATO if chi == "ada" else "", CAPACITA, MANUALE_VENDITE if chi == "clienti_vendite" else ""]  # uguali a ogni richiesta: finiscono in cache
+        righe = [f"Oggi è {self.agenda.adesso_testo()}.",
                  TELEFONO_SI if self.mano and self.mano.disponibile() else TELEFONO_NO]
+        if chi in ("ada", "clienti_vendite"):
+            url = self.vendite_url()
+            righe.append(f"APP VENDITE: indirizzo {url}" if url else
+                         "APP VENDITE: indirizzo non impostato. Chiedi all'utente di incollarlo in Agenda, Reparto vendite (o di scriverlo in chat).")
+        if (agenda := self.agenda.contesto()):
+            righe.append(agenda)
         if chi == "ada":
             routine = self.db.tutti("SELECT nome, ora, ogni_min, attiva FROM routine ORDER BY id")
             if routine:
@@ -301,10 +337,85 @@ class Ada:
                 return self.archivio.segna_incassata(args["id"], args.get("data"), da=chi)
             if nome == "chiudi_segnalazione":
                 return self.chiudi_segnalazione(args["id"], args.get("esito", ""), chi)
+            if nome == "agenda_aggiungi":
+                return self._agenda_aggiungi(chi, args)
+            if nome == "agenda_elenco":
+                return self.agenda.testo(int(args.get("giorni") or 14))
+            if nome == "agenda_cambia":
+                return self._agenda_cambia(chi, args)
+            if nome == "avvisa_utente":
+                return self._avvisa_utente(chi, args)
+            if nome == "vendite_coda":
+                return self._vendite_coda(chi, args)
         except Exception as e:  # lo strumento fallito non deve far cadere la conversazione
             self.log(chi, "errore", f"{nome}: {type(e).__name__} {e}")
             return f"Errore nello strumento {nome}: {e}"
         return "Strumento sconosciuto."
+
+    # ---------- agenda, avvisi e coda del reparto vendite ----------
+    def _agenda_aggiungi(self, chi, args):
+        v = self.agenda.aggiungi(args["titolo"], args["quando"], args.get("tipo") or "promemoria", args.get("note", ""),
+                                 args.get("ripeti") or "", args.get("preavviso_min") or 0, origine=chi)
+        self.log(chi, "agenda", f"aggiunto: {v['titolo']} ({self.agenda.etichetta(v['giorno'], v['ora'])})")
+        return (f"In agenda (id {v['id']}): {v['titolo']}, {self.agenda.etichetta(v['giorno'], v['ora'])}"
+                + (f", si ripete {v['ripeti']}" if v["ripeti"] else "")
+                + (f". Ti avviso {v['preavviso']} minuti prima." if v["preavviso"] else ". Ti avviso all'ora."))
+
+    def _agenda_cambia(self, chi, args):
+        id_, azione = int(args["id"]), args["azione"]
+        if azione == "elimina":
+            titolo = self.agenda.voce(id_)["titolo"]
+            self.agenda.elimina(id_)
+            self.log(chi, "agenda", f"eliminato: {titolo}")
+            return f"Tolto dall'agenda: {titolo}."
+        if azione == "fatto":
+            v = self.agenda.fatto(id_)
+            self.log(chi, "agenda", f"fatto: {v['titolo']}")
+            return f"Segnato come fatto: {v['titolo']}." if v["stato"] == "fatto" else \
+                f"Fatto. Si ripete: prossima volta {self.agenda.etichetta(v['giorno'], v['ora'])}."
+        if azione == "sposta":
+            v = self.agenda.modifica(id_, quando=args.get("quando"))
+        elif azione == "rinomina":
+            v = self.agenda.modifica(id_, titolo=args.get("titolo"))
+        else:
+            return "Azione sconosciuta."
+        self.log(chi, "agenda", f"{azione}: {v['titolo']}")
+        return f"Aggiornato: {v['titolo']}, {self.agenda.etichetta(v['giorno'], v['ora'])}."
+
+    def _avvisa_utente(self, chi, args):
+        titolo, testo = (" ".join(str(args.get(k, "")).split()) for k in ("titolo", "testo"))
+        if not titolo or not testo:
+            return "Servono un titolo e un testo."
+        if self.db.uno("SELECT COUNT(*) AS n FROM attivita WHERE azione='notifica inviata' AND ts>?", (int(time.time()) - 3600,))["n"] >= 6:
+            return "Troppe notifiche nell'ultima ora (massimo 6): non ne mando altre. Scrivi la cosa in chat."
+        if not self.notifica:
+            return "Le notifiche non sono disponibili su questo telefono (manca Termux:API)."
+        self.avvisa(titolo[:60], testo[:120], "ada-avviso")
+        self.log(chi, "notifica inviata", titolo[:60])
+        return "Notifica inviata."
+
+    def _vendite_coda(self, chi, args):
+        azione, ora = args["azione"], int(time.time())
+        if azione == "aggiungi":
+            frase = " ".join(str(args.get("frase", "")).split())[:400]
+            riassunto = " ".join(str(args.get("riassunto", "")).split())[:160]
+            if len(frase) < 8 or not riassunto:
+                return "Servono la frase per il Coach dell'app (almeno 8 caratteri) e un riassunto per l'utente."
+            if self.db.uno("SELECT COUNT(*) AS n FROM vendite_coda WHERE stato='da_riportare'")["n"] >= 30:
+                return "La coda è piena (30): l'utente deve prima riportare o chiudere qualcosa."
+            cur = self.db.esegui("INSERT INTO vendite_coda (ts, frase, riassunto) VALUES (?,?,?)", (ora, frase, riassunto))
+            self.log(chi, "coda vendite", riassunto)
+            self.avvisa("Vendite", "C'è un aggiornamento da riportare nell'app vendite.", "ada-vendite-coda")
+            return f"In coda (id {cur.lastrowid}): l'utente lo vede in Agenda, Reparto vendite, con il tasto per copiare la frase."
+        if azione == "fatto":
+            self.db.esegui("UPDATE vendite_coda SET stato='fatto', ts_stato=? WHERE id=?", (ora, int(args["id"])))
+            return "Segnato come riportato nell'app."
+        righe = self.db.tutti("SELECT id, riassunto, frase FROM vendite_coda WHERE stato='da_riportare' ORDER BY id")
+        return "\n".join(f"- id {r['id']}: {r['riassunto']} | frase: {r['frase']}" for r in righe) or "Coda vuota: tutto è stato riportato nell'app."
+
+    def vendite_url(self):
+        r = self.db.uno("SELECT valore FROM kv WHERE chiave='vendite_url'")
+        return json.loads(r["valore"]) if r else ""
 
     # ---------- segnalazioni e approvazioni ----------
     def segnala(self, agente, problema, fonte):
@@ -669,6 +780,7 @@ class Ada:
             f"- {time.strftime('%d/%m %H:%M', time.localtime(a['ts']))} {a['agente']}: {a['azione']} {a['dettaglio'] or ''}"[:140]
             for a in attivita]
         righe.append(self.soldi.stato_lettura())
+        righe.append(self.agenda.contesto() or "AGENDA: niente di imminente.")
         righe.append(f"CONSUMO OGGI: {c['totale']} token in totale (la chat con l'utente non ha tetto e non va mai limitata); "
                      f"lavori automatici {c['automatici']} su un tetto di {c['limite']}")
         return "\n".join(righe)

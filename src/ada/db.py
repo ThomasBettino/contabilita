@@ -30,6 +30,12 @@ CREATE TABLE IF NOT EXISTS collaudi (
   voto INTEGER, problemi TEXT);
 CREATE TABLE IF NOT EXISTS appunti (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, tipo TEXT, titolo TEXT, testo TEXT, azioni TEXT);
+CREATE TABLE IF NOT EXISTS eventi (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, titolo TEXT, giorno TEXT, ora TEXT DEFAULT '', tipo TEXT DEFAULT 'promemoria',
+  note TEXT DEFAULT '', ripeti TEXT DEFAULT '', preavviso INTEGER DEFAULT 0, stato TEXT DEFAULT 'attivo',
+  avvisato INTEGER DEFAULT 0, origine TEXT DEFAULT 'utente');
+CREATE TABLE IF NOT EXISTS vendite_coda (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, frase TEXT, riassunto TEXT, stato TEXT DEFAULT 'da_riportare', ts_stato INTEGER);
 CREATE TABLE IF NOT EXISTS fatture (id TEXT PRIMARY KEY, dati TEXT);
 CREATE TABLE IF NOT EXISTS kv (chiave TEXT PRIMARY KEY, valore TEXT);
 CREATE TABLE IF NOT EXISTS movimenti_visti (chiave TEXT PRIMARY KEY);

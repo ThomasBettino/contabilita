@@ -25,6 +25,7 @@ RITMI = {
                 "descrizione": "Un collaudo ogni mezz'ora, studio ogni 2 ore, lettura ogni ora. Consuma molto."},
 }
 RITMO_PREDEFINITO = "normale"
+SILENZIOSE = {"notifiche", "agenda"}
 
 PREDEFINITE = [
     {"nome": "riepilogo_sera", "descrizione": "Riepilogo della giornata: spese, cose da decidere, miglioramenti.",
@@ -51,6 +52,10 @@ PREDEFINITE = [
      "tipo": "codice", "ora": None, "ogni_min": 240, "prompt": None},
     {"nome": "notifiche", "descrizione": "Legge le notifiche di Revolut dal telefono ogni 2 minuti: non serve lo schermo né l'utente.",
      "tipo": "codice", "ora": None, "ogni_min": 2, "prompt": None},
+    {"nome": "agenda", "descrizione": "Controlla l'agenda ogni minuto e avvisa sul telefono all'ora di promemoria ed eventi.",
+     "tipo": "codice", "ora": None, "ogni_min": 1, "prompt": None},
+    {"nome": "agenda_mattina", "descrizione": "Ogni mattina avvisa con un riepilogo di ciò che c'è in agenda oggi (se non c'è niente, non fa niente).",
+     "tipo": "codice", "ora": "07:30", "ogni_min": None, "prompt": None},
     {"nome": "fatture", "descrizione": "Aggiorna l'archivio fatture e riconosce i bonifici in arrivo sul conto.",
      "tipo": "codice", "ora": None, "ogni_min": 10, "prompt": None},
     {"nome": "miglioramento", "descrizione": "Rivede le segnalazioni aperte e migliora i prompt (solo se ce ne sono).",
@@ -149,7 +154,7 @@ class Pianificatore:
             esito = f"Errore: {type(e).__name__}"
             self.ada.log("sistema", "errore routine", f"{r['nome']}: {e}")
         self.db.esegui("UPDATE routine SET ultima=?, esito=? WHERE id=?", (adesso, str(esito)[:300], id_))
-        if not (r["nome"] == "notifiche" and str(esito)[:300] == r["esito"]):  # ogni 2 minuti: si registra solo se cambia qualcosa
+        if not (r["nome"] in SILENZIOSE and str(esito)[:300] == r["esito"]):  # girano ogni minuto: si registra solo se cambia qualcosa
             self.ada.log("routine", r["nome"], str(esito)[:200])
         return str(esito)
 
@@ -192,6 +197,27 @@ class Pianificatore:
                 self.esegui(fatture["id"])
             return f"{esito['nuovi']} nuovi movimenti letti."
         return "Nessuna novità."
+
+    def _agenda(self, manuale):
+        ag, adesso = self.ada.agenda, self.adesso()
+        avvisati = []
+        for v in ag.da_avvisare(adesso):
+            titolo = "Promemoria" if v["tipo"] == "promemoria" else "Appuntamento"
+            quando = f"{v['ora']} " if v["ora"] else ""
+            testo = f"{quando}{v['titolo']}" + (" (in ritardo)" if v.get("in_ritardo") else "")
+            if v["preavviso"] and not v.get("in_ritardo"):
+                testo = f"tra {v['preavviso']} min: {v['titolo']}" + (f" ({v['ora']})" if v["ora"] else "")
+            self.ada.avvisa(titolo, testo[:120], f"ada-agenda-{v['id']}")
+            ag.segna_avvisato(v["id"], adesso)
+            avvisati.append(v["titolo"])
+        return ("Avvisato: " + ", ".join(avvisati))[:250] if avvisati else "Nessun avviso."
+
+    def _agenda_mattina(self, manuale):
+        r = self.ada.agenda.riepilogo_mattina()
+        if not r:
+            return "Niente in agenda oggi."
+        self.ada.avvisa(r[0], r[1], "ada-agenda-mattina")
+        return f"Avviso del mattino: {r[1]}"[:250]
 
     def _senza_limite(self, manuale):
         return None if manuale or not self.ada.sopra_limite() else "Saltata: limite di consumo di oggi raggiunto."

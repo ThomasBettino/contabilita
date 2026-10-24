@@ -47,7 +47,7 @@ class TestPianificatore(Base):
     def test_routine_predefinite_e_non_duplicate(self):
         c = self.ctx()
         Pianificatore(c.ada)
-        self.assertEqual([r["nome"] for r in c.pian.elenco()], ["riepilogo_sera", "miglioria_quotidiana", "collaudo", "studio", "lettura", "notifiche", "fatture", "miglioramento", "promemoria_approvazioni"])
+        self.assertEqual([r["nome"] for r in c.pian.elenco()], ["riepilogo_sera", "miglioria_quotidiana", "collaudo", "studio", "lettura", "notifiche", "agenda", "agenda_mattina", "fatture", "miglioramento", "promemoria_approvazioni"])
 
     def test_riepilogo_gira_una_volta_scrive_in_chat_e_avvisa_senza_cifre(self):
         c = self.ctx(FinteRisposte(con_uso(testo("Oggi 0 spese, tutto tranquillo."))))
@@ -402,7 +402,7 @@ class TestServerRoutine(Base):
                 return e.code, json.load(e)
 
         stato = json.load(urllib.request.urlopen(base + "/api/stato"))
-        self.assertEqual(len(stato["routine"]), 9)
+        self.assertEqual(len(stato["routine"]), 11)
         self.assertEqual(stato["consumo"]["totale"], 0)
         rid = next(r["id"] for r in stato["routine"] if r["nome"] == "miglioramento")
         self.assertIn("niente da fare", post(f"/api/routine/{rid}/esegui", {})[1]["esito"])

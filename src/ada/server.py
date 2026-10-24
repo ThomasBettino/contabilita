@@ -55,6 +55,15 @@ class Contesto:
             c["problemi"] = json.loads(c["problemi"] or "[]")
         return out
 
+    def agenda_stato(self):
+        e = self.ada.agenda.elenco(0, fatti=0)
+        return {"scaduti": len(e["scaduti"]), "oggi": sum(1 for v in e["prossimi"] if v["giorno"] == e["oggi"])}
+
+    def vendite_stato(self):
+        return {"url": self.ada.vendite_url(),
+                "coda": self.db.tutti("SELECT id, ts, frase, riassunto FROM vendite_coda WHERE stato='da_riportare' ORDER BY id"),
+                "fatte": self.db.tutti("SELECT id, ts_stato, riassunto FROM vendite_coda WHERE stato='fatto' ORDER BY ts_stato DESC LIMIT 5")}
+
     def idee_stato(self):
         out = self.db.tutti("SELECT id, ts, titolo, descrizione, motivo, stato FROM idee ORDER BY id DESC LIMIT 15")
         for i in out:
@@ -99,6 +108,9 @@ class Contesto:
             "ritmo": {"scelto": self.pian.ritmo() if self.pian else None,
                       "opzioni": {k: {"etichetta": v["etichetta"], "descrizione": v["descrizione"]} for k, v in RITMI.items()}},
             "lettura": self.ada.soldi.stato_lettura(),
+            "agenda": self.agenda_stato(),
+            "vendite": {"url": bool(self.ada.vendite_url()),
+                        "in_coda": self.db.uno("SELECT COUNT(*) AS n FROM vendite_coda WHERE stato='da_riportare'")["n"]},
             "collaudi": self.collaudi_stato(),
             "appunti": self.db.tutti("SELECT id, ts, tipo, titolo, testo FROM appunti ORDER BY id DESC LIMIT 8"),
             "libri": self.ada.studio.elenco_libri() if getattr(self.ada, "studio", None) else [],
@@ -254,6 +266,42 @@ def crea_handler(ctx):
                     ctx.db.esegui("INSERT OR IGNORE INTO movimenti_visti VALUES (?)", (chiave,))
                 ctx.ada.log("utente", "estratto conto", f"{str(corpo.get('nome', ''))[:40]}: {r['nuovi']} nuovi, {r['presenti']} già presenti")
                 return r
+            if metodo == "GET" and path == "/api/agenda":
+                giorni = max(1, min(int((self.query.get("giorni") or ["30"])[0]), 365))
+                e = ctx.ada.agenda.elenco(giorni)
+                for v in e["fatti"]:
+                    v["etichetta"] = ctx.ada.agenda.etichetta(v["giorno"], v["ora"])
+                return e
+            if metodo == "POST" and path == "/api/agenda":
+                v = ctx.ada.agenda.aggiungi(corpo.get("titolo"), corpo.get("quando"), corpo.get("tipo") or "promemoria",
+                                            corpo.get("note", ""), corpo.get("ripeti") or "", corpo.get("preavviso_min") or 0, origine="utente")
+                ctx.ada.log("utente", "agenda", f"aggiunto: {v['titolo']}")
+                return v
+            m = re.fullmatch(r"/api/agenda/(\d+)", path)
+            if metodo == "POST" and m:
+                return {"messaggio": ctx.ada._agenda_cambia("utente", {"id": int(m.group(1)), "azione": corpo.get("azione"),
+                                                                       "quando": corpo.get("quando"), "titolo": corpo.get("titolo")})}
+            if metodo == "GET" and path == "/api/vendite":
+                return ctx.vendite_stato()
+            if metodo == "POST" and path == "/api/vendite/impostazioni":
+                url = str(corpo.get("url", "")).strip()
+                if url and not re.fullmatch(r"https://(claude\.ai|claude\.site)/[A-Za-z0-9_./-]{3,200}", url):
+                    raise ValueError("L'indirizzo deve essere il link dell'app, per esempio https://claude.ai/artifact/…")
+                ctx.db.esegui("INSERT INTO kv (chiave, valore) VALUES ('vendite_url', ?) ON CONFLICT(chiave) DO UPDATE SET valore=excluded.valore",
+                              (json.dumps(url),))
+                ctx.ada.log("utente", "app vendite", "indirizzo impostato" if url else "indirizzo tolto")
+                return {"url": url}
+            m = re.fullmatch(r"/api/vendite/coda/(\d+)", path)
+            if metodo == "POST" and m:
+                if corpo.get("azione") not in ("fatto", "elimina"):
+                    raise ValueError("L'azione è fatto oppure elimina.")
+                if not ctx.db.uno("SELECT id FROM vendite_coda WHERE id=?", (int(m.group(1)),)):
+                    raise LookupError("Voce non trovata.")
+                if corpo["azione"] == "fatto":
+                    ctx.db.esegui("UPDATE vendite_coda SET stato='fatto', ts_stato=? WHERE id=?", (int(time.time()), int(m.group(1))))
+                else:
+                    ctx.db.esegui("DELETE FROM vendite_coda WHERE id=?", (int(m.group(1)),))
+                return {"ok": True}
             if path == "/api/ritmo" and metodo == "POST":
                 if not ctx.token:  # cambia quanto si spende: mai senza token
                     raise PermissionError("Per cambiare il ritmo di lavoro serve prima un token di accesso (ADA_TOKEN: in Termux scrivi «sh scripts/token.sh», vedi docs/AVVIO.md).")

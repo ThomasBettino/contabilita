@@ -1,10 +1,16 @@
 """Il team di Ada: elenco agenti, prompt modificabili e regole di sistema fisse."""
+import hashlib
 import shutil
 from pathlib import Path
 
 from .llm import MARCATORE
 
 SEED = Path(__file__).resolve().parents[2] / "agenti"
+
+# Prompt di partenza delle versioni precedenti (impronta SHA-1): se il file dell'utente è ancora identico, non l'ha modificato né Ada
+# né lui, quindi si può sostituire con quello nuovo senza perdere niente.
+SEED_PRECEDENTI = {"clienti_vendite": {"392acf0747ab5d31cde88795d8f8141a3233dab8"},
+                   "quotidiano": {"6366627dd5052b6611592e02626e62c81a1d486b"}}
 
 AGENTI = {
     "ada": ("Ada", "Capo del team. Coordina, decide e migliora gli altri."),
@@ -34,7 +40,8 @@ class Squadra:
         self.dir.mkdir(parents=True, exist_ok=True)
         for nome in AGENTI:
             dst, src = self.dir / f"{nome}.md", SEED / nome / "prompt.md"
-            if not dst.exists() and src.exists():
+            if src.exists() and (not dst.exists() or (nome in SEED_PRECEDENTI and
+                                                      hashlib.sha1(dst.read_bytes()).hexdigest() in SEED_PRECEDENTI[nome])):
                 shutil.copyfile(src, dst)
 
     def _file(self, nome: str) -> Path:

@@ -102,6 +102,22 @@ Ada può anche creare altre routine da sola (massimo 8, ogni 30 minuti al minimo
 
 Le routine girano solo mentre Ada è accesa (il processo in Termux). Se il telefono si riavvia, riavvia Ada con `scripts/ada.sh`.
 
+## Agenda e promemoria
+Ada ha un'agenda sua (non è il Calendario di Google: quello non lo legge né lo scrive). In **Agenda** vedi, giorno per giorno, promemoria e appuntamenti, e quelli scaduti da chiudere. Le voci si aggiungono dal tasto **＋ Nuova voce** (tipo, cosa, giorno, ora o tutto il giorno, quanto prima avvisare, ripetizione ogni giorno, settimana o mese) oppure a parole: «ricordami domani alle 9 di chiamare Zanetti».
+- **Avvisi:** la routine «agenda» controlla ogni minuto e all'ora giusta il telefono manda la notifica (il testo è quello che hai scritto tu). Se il telefono era spento, l'avviso arriva appena riparte, fino a 12 ore dopo; oltre, la voce resta tra i **scaduti** da chiudere o spostare.
+- **Mattina:** alle 7:30 un solo avviso con il riassunto di oggi. **Se non c'è niente in agenda, non manda niente.**
+- **Ore:** sono quelle italiane (`Europe/Rome`, o `ADA_FUSO`). Una voce senza ora vale tutto il giorno e avvisa alle 8.
+- Ada conosce la tua agenda: vede nel suo contesto le cose delle prossime 36 ore, quindi puoi chiederle «cosa ho domani?». Le voci create da Ada o dal reparto vendite compaiono nella stessa lista.
+
+## Reparto vendite: l'app «Andamento vendite»
+Il reparto vendite (l'assistente «Clienti e vendite») conosce a memoria l'app **Andamento vendite**: schede, dati di un preventivo o di un cliente, stati, calcolo del fatturato e tutto quello che sa fare il suo Coach. Il manuale è in `agenti/clienti_vendite/manuale-app.md`, scritto leggendo il codice dell'app alla versione **v21**.
+1. **Una volta sola:** in **Agenda, Reparto vendite** incolla il link dell'app (quello che vedi in Condividi, tipo `https://claude.ai/artifact/…`). Apri l'app e fai l'accesso una volta, con «Resta collegato su questo dispositivo» spuntato (Ada non scrive mai la password).
+2. **Come funziona:** dici ad Ada una novità («ho chiuso la vendita di Zanetti Emilio», «ho chiamato Rossi, lo richiamo lunedì», «Bianchi ha versato 1000 euro di acconto»). Ada ti avvisa subito con una notifica («Bravo, hai venduto! Parlo con il reparto vendite e aggiorno tutto subito.») e passa il compito al reparto vendite. Lui apre l'app dal telefono, va nel **Coach**, scrive la frase, aspetta la risposta e ti dice cosa è stato registrato. Se manca un dato obbligatorio (per una vendita: la formula full drive/contanti/altro e il margine in euro) te lo chiede, non lo inventa. Richiami e appuntamenti li mette anche nella tua agenda, così il telefono ti avvisa all'ora giusta (l'app da sola non manda notifiche).
+3. **Serve lo schermo collegato** (**Collega schermo**, vedi `docs/TELEFONO.md`). Se non lo è, o se l'app chiede l'accesso, l'aggiornamento **non va perso**: resta in **Agenda, Reparto vendite, Da riportare nell'app** con il tasto **Copia e apri l'app**: ti basta incollare la frase nel Coach. Poi premi Fatto.
+4. **Cosa non può fare:** senza lo schermo Ada non vede i dati dell'app (non sa quanti preventivi hai o chi è da richiamare, a meno che glielo dici o che lei li legga dallo schermo); non manda messaggi ai clienti; non invia notifiche con nomi di clienti o importi (restano sul blocco schermo). Le routine automatiche non toccano mai lo schermo: l'aggiornamento parte solo quando le scrivi tu.
+5. **Se l'app cambia:** il numero di versione si legge sotto il titolo dell'app («Sincronizzato alle … · v21»). Il manuale è fermo a v21: se aggiungi funzioni, fallo rileggere e aggiornare (in una sessione di sviluppo: «aggiorna `agenti/clienti_vendite/manuale-app.md` rileggendo l'app»).
+6. **Prova:** scrivi ad Ada «ho chiamato Zanetti Emilio, vuole pensarci, richiamalo lunedì» con lo schermo collegato e guarda cosa fa; se qualcosa non va, dimmi dove si ferma (l'attività del reparto vendite si vede nel popup del team e in **Registro, Storico**).
+
 ## Token di accesso (serve per salvare codici, aggiornare, cambiare ritmo e modificare i movimenti)
 Qualunque app del telefono può raggiungere Ada su `localhost`. Per questo Ada **rifiuta** di salvare codici (script fatture), di aggiornarsi, di cambiare ritmo e di modificare i movimenti finché non imposti un token di accesso. In Termux, una volta sola:
 ```
@@ -130,6 +146,6 @@ Quando ci sono versioni nuove del programma: **Registro, Lavoro, Versione, Aggio
 - Database e prompt di Ada stanno in `~/ada`, i movimenti in `~/movimenti.db`: fuori dal repo, mai nel repository.
 
 ## Cosa fa oggi e cosa no
-Funziona: chat con Ada, team di 7 assistenti più il Collaudatore (che esiste solo per mettere alla prova Ada), delega, ciclo di miglioramento dei prompt, approvazioni, riepilogo spese dai movimenti Revolut.
+Funziona: agenda e promemoria con avvisi, reparto vendite per l'app Andamento vendite, chat con Ada, team di 7 assistenti più il Collaudatore (che esiste solo per mettere alla prova Ada), delega, ciclo di miglioramento dei prompt, approvazioni, riepilogo spese dai movimenti Revolut.
 Controllo del telefono (ricerca e acquisti): richiede la configurazione in `docs/TELEFONO.md`.
-Non ancora collegati come strumenti propri: Gmail, Calendario, WhatsApp, fatture (Ada può usarli solo attraverso lo schermo, quando il telefono è collegato). Ada lo sa e non finge di usarli.
+Non ancora collegati come strumenti propri: Gmail, Calendario di Google, WhatsApp, fatture (Ada può usarli solo attraverso lo schermo, quando il telefono è collegato). Ada lo sa e non finge di usarli.
