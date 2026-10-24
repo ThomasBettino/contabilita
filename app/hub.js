@@ -734,6 +734,29 @@ $("form-ag").addEventListener("submit", async (e) => {
   } catch (err) { toast(err.message); }
 });
 
+let codiceMessaggero = "";
+function disegnaMessaggero(m) {
+  const stato = !m.attivo ? "Non ancora attivo: genera il codice e incollalo nell'app."
+    : m.ricevuti ? `Ultimo messaggio dall'app: ${quando(m.ultimo)} · ${m.ricevuti} ricevuti` + (m.non_leggibili ? ` · ${m.non_leggibili} non leggibili` : "")
+    : "Attivo, ma dall'app non è ancora arrivato niente: nell'app, in Impostazioni, «Avvisi ad Ada», tocca «Prova il collegamento»." + (m.non_leggibili ? ` (${m.non_leggibili} messaggi non leggibili)` : "");
+  const mostra = async (azione) => {
+    try { codiceMessaggero = (await api("/api/vendite/messaggero", azione ? { azione } : {})).codice; caricaVendite(); }
+    catch (e) { toast(e.message); }
+  };
+  svuota($("vendite-msg"),
+    h("h3", null, "Avvisi automatici dall'app"),
+    h("p", { class: "nota" }, "Quando aggiungi o cambi qualcosa nell'app vendite (anche dal PC), l'app manda un messaggio in codice alla tua Gmail: Ada lo legge dalle notifiche del telefono, lo segna nel diario o in agenda e ti avvisa."),
+    h("p", { class: "nota" }, stato),
+    codiceMessaggero ? h("div", { class: "voce" }, h("span", { class: "meta" }, "Codice per l'app (incollalo in Impostazioni, Avvisi ad Ada):"),
+      h("code", { class: "codice" }, codiceMessaggero),
+      h("div", { class: "azioni ripiega" },
+        h("button", { class: "primario", type: "button", onclick: async () => { try { await navigator.clipboard.writeText(codiceMessaggero); toast("Codice copiato"); } catch (e) { toast("Non riesco a copiare: selezionalo a mano"); } } }, "Copia il codice"),
+        h("button", { class: "secondario", type: "button", onclick: () => { codiceMessaggero = ""; caricaVendite(); } }, "Nascondi"),
+        h("button", { class: "secondario", type: "button", onclick: () => { if (confirm("Con un codice nuovo l'app smette di essere riconosciuta finché non lo incolli di nuovo. Procedo?")) mostra("rigenera"); } }, "Codice nuovo"))) 
+      : h("div", { class: "riga-azioni" }, h("button", { class: "secondario", type: "button", disabled: !tokenAttivo, onclick: () => mostra() }, m.attivo ? "Mostra il codice" : "Genera il codice")),
+    !tokenAttivo ? h("p", { class: "nota" }, "Per vedere il codice serve prima il token di accesso: in Termux scrivi «sh scripts/token.sh».") : null);
+}
+
 let urlVendite = "";
 async function caricaVendite() {
   let j;
@@ -745,6 +768,7 @@ async function caricaVendite() {
   $("vendite-nota").textContent = j.url
     ? "Quando racconti una vendita, un preventivo o una chiamata, il reparto vendite aggiorna l'app dal telefono. Se lo schermo non è collegato, l'aggiornamento resta qui in coda."
     : "Incolla il link dell'app «Andamento vendite» (lo trovi nel menu Condividi dell'app): serve ad Ada per aprirla e aggiornarla.";
+  disegnaMessaggero(j.messaggero);
   const TIPI_DIARIO = { preventivo: "Preventivi", vendita: "Vendite", chiamata: "Chiamate", test_drive: "Test drive", appuntamento: "Appuntamenti", perso: "Persi", pagamento: "Pagamenti", altro: "Altro" };
   const SING = { preventivo: "Preventivo", vendita: "Vendita", chiamata: "Chiamata", test_drive: "Test drive", appuntamento: "Appuntamento", perso: "Cliente perso", pagamento: "Pagamento", altro: "Altro" };
   const c = j.oggi.conteggi;

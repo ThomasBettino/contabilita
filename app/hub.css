@@ -262,3 +262,4 @@ details.gruppo .lista { margin-top: 10px; }
 #form-ag input[hidden] { display: none; }
 #form-ag .segmento { align-self: flex-start; }
 a.secondario { text-decoration: none; display: inline-block; }
+.codice { display: block; user-select: all; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--linea); border-radius: 10px; padding: 10px 12px; font-size: 15px; letter-spacing: .5px; }

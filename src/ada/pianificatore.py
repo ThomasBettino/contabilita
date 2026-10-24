@@ -186,19 +186,32 @@ class Pianificatore:
         lettore = getattr(self.ada, "lettore_notifiche", None)
         if not lettore:
             return "Non disponibile: Termux:API non trovato su questo telefono."
+        letto = {}
+
+        def leggi():
+            letto["notifiche"] = lettore()  # una sola lettura serve a Revolut e all'app vendite
+            return letto["notifiche"]
         db = apri(str(self.ada.soldi.percorso))
         try:
-            esito = leggi_e_salva(db, lettore, self.adesso)
+            esito = leggi_e_salva(db, leggi, self.adesso)
         finally:
             db.close()
         if "errore" in esito:
             return f"Errore: lettura notifiche non riuscita: {esito['errore']}"[:250]
+        parti = []
         if esito["nuovi"]:
             fatture = self.db.uno("SELECT id FROM routine WHERE nome='fatture' AND attiva=1")
             if fatture:  # subito: così l'avviso di un bonifico arriva in pochi minuti e non al giro successivo
                 self.esegui(fatture["id"])
-            return f"{esito['nuovi']} nuovi movimenti letti."
-        return "Nessuna novità."
+            parti.append(f"{esito['nuovi']} nuovi movimenti letti.")
+        try:
+            app = self.ada.app_vendite.elabora(letto.get("notifiche") or [])
+        except Exception as e:  # un messaggio strano dell'app non deve fermare la lettura di Revolut
+            self.ada.log("sistema", "errore app vendite", f"{type(e).__name__}: {e}")
+            app = ""
+        if app:
+            parti.append(app + ".")
+        return " ".join(parti) or "Nessuna novità."
 
     def _agenda(self, manuale):
         ag, adesso = self.ada.agenda, self.adesso()

@@ -60,7 +60,7 @@ class Contesto:
         return {"scaduti": len(e["scaduti"]), "oggi": sum(1 for v in e["prossimi"] if v["giorno"] == e["oggi"])}
 
     def vendite_stato(self):
-        return {"url": self.ada.vendite_url(),
+        return {"url": self.ada.vendite_url(), "messaggero": self.ada.app_vendite.stato(),
                 "oggi": {"giorno": self.ada.agenda.oggi(), "conteggi": self.ada.diario.conteggi(), "voci": self.ada.diario.elenco()},
                 "coda": self.db.tutti("SELECT id, ts, frase, riassunto FROM vendite_coda WHERE stato='da_riportare' ORDER BY id"),
                 "fatte": self.db.tutti("SELECT id, ts_stato, riassunto FROM vendite_coda WHERE stato='fatto' ORDER BY ts_stato DESC LIMIT 5")}
@@ -292,6 +292,13 @@ def crea_handler(ctx):
                               (json.dumps(url),))
                 ctx.ada.log("utente", "app vendite", "indirizzo impostato" if url else "indirizzo tolto")
                 return {"url": url}
+            if metodo == "POST" and path == "/api/vendite/messaggero":
+                if not ctx.token:  # il codice firma i messaggi dell'app: non si mostra a chiunque sul telefono
+                    raise PermissionError("Per vedere il codice serve prima un token di accesso (ADA_TOKEN: in Termux scrivi «sh scripts/token.sh», vedi docs/AVVIO.md).")
+                if corpo.get("azione") == "rigenera":
+                    ctx.db.esegui("DELETE FROM kv WHERE chiave='vendite_segreto'")
+                    ctx.ada.log("utente", "app vendite", "codice del messaggero rigenerato")
+                return {"codice": ctx.ada.app_vendite.crea_segreto()}
             m = re.fullmatch(r"/api/vendite/registro/(\d+)", path)
             if metodo == "POST" and m:
                 if corpo.get("azione") != "elimina":

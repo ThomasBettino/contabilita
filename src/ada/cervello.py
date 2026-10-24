@@ -13,6 +13,7 @@ import time
 
 from .agenda import Agenda
 from .agenti import AGENTI, SEED
+from .appvendite import AppVendite
 from .vendite import TIPI as TIPI_DIARIO, Diario
 from .soldi import NOMI_CATEGORIE
 from .llm import ErroreLLM
@@ -176,6 +177,7 @@ class Ada:
         self.archivio = None      # archivio fatture P.IVA (src/ada/fatture.py)
         self.agenda = Agenda(db)  # promemoria ed eventi con avviso sul telefono
         self.diario = Diario(db, self.agenda)  # preventivi, vendite e chiamate raccontati ad Ada
+        self.app_vendite = AppVendite(self)  # i messaggi firmati che l'app vendite manda quando cambia qualcosa
         self.soldi.regole = {r["parola"]: r["categoria"] for r in self.db.tutti("SELECT parola, categoria FROM regole_categoria")}
 
     # ---------- utilità ----------
