@@ -32,6 +32,7 @@ MAX_TOKEN_RIPROVA = 8192  # se una risposta viene tagliata si riprova una volta 
 PROMESSA = re.compile(r"\b(?:lo|la|li|le)\s+(?:faccio|applico|salvo|scrivo|invio)\s+(?:ora|adesso|subito|partire)\b"
                       r"|\b(?:faccio|applico|procedo|parto)\s+(?:ora|adesso|subito)\b|\badesso\s+(?:lo|la)\s+(?:faccio|applico)\b"
                       r"|\bmi metto al lavoro\b|\b(?:la|lo)\s+faccio\s+partire\b", re.I)
+RESIDUO_NULL = re.compile(r"(?<=[.!?…)])\s*\bnull\s*$")  # un «null» attaccato alla fine di una frase è un residuo, mai parte della risposta
 MAX_REGOLE = 80
 MAX_IDEE_APERTE = 6
 IDEE_APERTE = "('proposta','approvata')"
@@ -269,7 +270,7 @@ class Ada:
             r = self.llm(system, messaggi, strumenti, max_tokens=spazio)
             self._conta(r)
             blocchi = r.get("content", [])
-            testo = "".join(b.get("text", "") for b in blocchi if b.get("type") == "text").strip()
+            testo = RESIDUO_NULL.sub("", "".join(b.get("text", "") for b in blocchi if b.get("type") == "text")).strip()
             fine = r.get("stop_reason")
             if fine == "max_tokens":
                 # la risposta (spesso un prompt intero dentro la chiamata a uno strumento) è stata tagliata

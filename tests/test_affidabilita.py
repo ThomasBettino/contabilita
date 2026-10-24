@@ -165,5 +165,14 @@ class TestVedereIlLavoro(Base):
         self.assertEqual((l[0]["titolo"], l[0]["cosa"], l[0]["passo"]), ("Revisore", "Ricontrollo i totali", "riepilogo_spese"))
 
 
+class TestResiduoNull(Base):
+    def test_un_null_attaccato_alla_fine_della_frase_non_arriva_all_utente(self):
+        for uscito, atteso in (("Oggi ho già usato quella giornaliera.null", "Oggi ho già usato quella giornaliera."),
+                               ("Fatto! null", "Fatto!"), ("Ok.\nnull", "Ok."), ("Il valore è null", "Il valore è null"),
+                               ("Una regola nulla", "Una regola nulla"), ("null", "null")):
+            c = self.ctx(FinteRisposte(testo(uscito)))
+            self.assertEqual(c.ada.chiacchiera("ciao"), atteso, uscito)
+
+
 if __name__ == "__main__":
     unittest.main()
