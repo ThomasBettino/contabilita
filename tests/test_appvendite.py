@@ -85,6 +85,13 @@ class TestLeggi(Base):
         self.assertEqual(self.leggi(c, gmail(tagliato))[1], 1)
         self.assertEqual(self.leggi(c, gmail(tagliato))[1], 0)
 
+    def test_oggetto_intero_e_anteprima_tagliata_della_stessa_notifica_non_sono_un_errore(self):
+        c = self.ctx()
+        m = self.msg("preventivo", "Rossi Mario", "Peugeot 208", "2026-10-24", chiave="t1")
+        n = gmail(m, title=m, content="Messaggio automatico dell'app per Ada.\n" + m[:40])
+        validi, rotti = c.ada.app_vendite.leggi([n])
+        self.assertEqual((len(validi), rotti), (1, 0))
+
     def test_tipi_date_e_ore_strani_si_scartano(self):
         c = self.ctx()
         for brutto in (self.msg("regalo", "X"), self.msg("vendita", "X", data="ieri"), self.msg("vendita", "X", ora="9"),
@@ -148,6 +155,27 @@ class TestEventi(Base):
         (v,) = c.db.tutti("SELECT titolo, giorno, ora, tipo, preavviso FROM eventi")
         self.assertEqual((v["titolo"], v["giorno"], v["ora"], v["tipo"], v["preavviso"]), ("Richiamare Zanetti Emilio", "2026-10-26", "", "promemoria", 0))
         self.assertEqual(self.inviate[0][1], "Hei Thomas, ho visto che hai aggiunto un richiamo: l'ho segnato.")
+
+    def test_un_messaggio_senza_data_toglie_il_richiamo_o_l_appuntamento_dall_agenda(self):
+        c = self.ctx()
+        c.ada.app_vendite.elabora([gmail(self.msg("richiamo", "Zanetti Emilio", "", "2026-10-26", chiave="rz")),
+                                   gmail(self.msg("appuntamento", "Bianchi", "Consegna", "2026-10-25", "15:00", chiave="ab"))])
+        self.assertEqual(len(c.db.tutti("SELECT * FROM eventi")), 2)
+        self.inviate.clear()
+        esito = c.ada.app_vendite.elabora([gmail(self.msg("richiamo", "Zanetti Emilio", "", "", chiave="rz")),  # venduto: il richiamo non serve più
+                                           gmail(self.msg("appuntamento", "Bianchi", "Consegna", "", chiave="ab"))])
+        self.assertEqual(c.db.tutti("SELECT * FROM eventi"), [])
+        self.assertEqual(esito, "2 tolte dall'agenda")
+        self.assertEqual(self.inviate, [])  # chi toglie qualcosa non riceve una notifica
+        self.assertIn("richiamo di Zanetti Emilio: tolto dall'agenda", self.chat(c)[-1])
+        self.assertIn("appuntamento di Bianchi: tolto dall'agenda", self.chat(c)[-1])
+
+    def test_togliere_una_voce_che_ada_non_conosce_non_fa_niente(self):
+        c = self.ctx()
+        mia = c.ada.agenda.aggiungi("Pagare il bollo", "2026-10-30", "promemoria")
+        self.assertEqual(c.ada.app_vendite.elabora([gmail(self.msg("richiamo", "Mai visto", "", "", chiave="rx"))]), "")
+        self.assertEqual([r["id"] for r in c.db.tutti("SELECT id FROM eventi")], [mia["id"]])
+        self.assertEqual(self.chat(c), [])
 
     def test_una_data_passata_non_crea_ricordi_inutili(self):
         c = self.ctx()

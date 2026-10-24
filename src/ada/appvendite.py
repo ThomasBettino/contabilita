@@ -87,9 +87,10 @@ class AppVendite:
         """Dai testi delle notifiche ricava i messaggi validi, mai visti prima. Conta quelli illeggibili o con la firma sbagliata."""
         segreto, validi, rotti = self.segreto(), [], 0
         for n in notifiche:
-            for testo in _testi(n):
-                trovati = list(MESSAGGIO.finditer(testo))
-                if "[ADA]" in testo and not trovati and not self._gia_visto("x:" + hashlib.sha1(testo.encode()).hexdigest()[:16]):
+            testi = [(t, list(MESSAGGIO.finditer(t))) for t in _testi(n)]
+            completo = any(trovati for _, trovati in testi)  # oggetto e anteprima del corpo: se uno è intero, l'altro tagliato non conta
+            for testo, trovati in testi:
+                if "[ADA]" in testo and not trovati and not completo and not self._gia_visto("x:" + hashlib.sha1(testo.encode()).hexdigest()[:16]):
                     rotti += 1  # c'è il marchio ma il messaggio è tagliato o rovinato
                 for m in trovati:
                     parti = m.group(1).split("|")
@@ -138,11 +139,21 @@ class AppVendite:
         return True
 
     def _in_agenda(self, ev):
-        """Ritorna 'nuovo', 'spostato' oppure None se in agenda c'era già tutto."""
+        """Ritorna 'nuovo', 'spostato', 'tolto' oppure None se in agenda c'era già tutto. Senza data il messaggio annulla la voce."""
         ag, db = self.ada.agenda, self.ada.db
         cliente, dettaglio, data, ora = ev["cliente"], ev["dettaglio"], ev["data"], ev["ora"]
-        if not data:
-            return None
+        if not data:  # nell'app il richiamo o l'appuntamento è stato tolto, fatto o annullato
+            mappa = db.uno("SELECT voce FROM app_mappa WHERE chiave=?", (ev["chiave"],)) if ev["chiave"] else None
+            if not mappa:
+                return None
+            db.esegui("DELETE FROM app_mappa WHERE chiave=?", (ev["chiave"],))
+            try:
+                if ag.voce(mappa["voce"])["stato"] != "attivo":
+                    return None
+                ag.elimina(mappa["voce"])
+            except LookupError:
+                return None
+            return "tolto"
         if ev["tipo"] == "richiamo":
             titolo, tipo_voce, preavviso = f"Richiamare {cliente}"[:120], "promemoria", 0
             ora = ""
@@ -180,6 +191,8 @@ class AppVendite:
     def _riga(self, ev, esito):
         c, d = ev["cliente"] or "?", f" ({ev['dettaglio']})" if ev["dettaglio"] else ""
         quando = self.ada.agenda.etichetta(ev["data"], ev["ora"]) if ev["data"] else ""
+        if esito == "tolto":
+            return f"{'richiamo' if ev['tipo'] == 'richiamo' else 'appuntamento'} di {c}: tolto dall'agenda, l'hai cancellato o chiuso nell'app"
         return {"preventivo": f"preventivo di {c}{d}: segnato nel diario", "vendita": f"vendita a {c}{d}: segnata nel diario",
                 "perso": f"{c} perso{d}: segnato nel diario", "chiamata": f"chiamata a {c}{d}: segnata nel diario",
                 "test_drive": f"test drive fatto con {c}: segnato nel diario", "pagamento": f"pagamento di {c}{d}: segnato nel diario",
@@ -210,15 +223,18 @@ class AppVendite:
             esito = self._in_agenda(ev) if ev["tipo"] in AGENDA else ("nuovo" if self._nel_diario(ev) else None)
             if esito:
                 righe.append(self._riga(ev, esito))
-                conteggi[ev["tipo"]] = conteggi.get(ev["tipo"], 0) + 1
+                if esito != "tolto":
+                    conteggi[ev["tipo"]] = conteggi.get(ev["tipo"], 0) + 1
         if ping:
             self.ada.avvisa("App vendite", f"Hei {NOME_UTENTE}, il collegamento con l'app vendite funziona!", "ada-app-vendite")
             self.ada._dici("Il collegamento con l'app Andamento vendite funziona: ho ricevuto il messaggio di prova.")
             self.ada.log("app vendite", "collegamento provato", "ok")
         if conteggi:
             self.ada.avvisa("Ada ha visto una novità", self._avviso(conteggi), "ada-app-vendite")
-            self.ada._dici("Ho visto che nell'app vendite hai aggiunto:\n" + "\n".join("• " + r for r in righe))
+        if righe:  # chi toglie qualcosa dall'app non riceve una notifica: la riga resta in chat e nel registro
+            self.ada._dici("Ho visto che nell'app vendite " + ("hai aggiunto" if conteggi else "è cambiato") + ":\n" + "\n".join("• " + r for r in righe))
             self.ada.log("app vendite", "novità dall'app", "; ".join(righe)[:300])
-        parti = ([f"{sum(conteggi.values())} novità dall'app"] if conteggi else []) + (["collegamento provato"] if ping else []) \
-            + ([f"{rotti} messaggi non leggibili"] if rotti else [])
+        nuove = sum(conteggi.values())
+        parti = ([f"{nuove} novità dall'app"] if nuove else []) + ([f"{len(righe) - nuove} tolte dall'agenda"] if len(righe) > nuove else []) \
+            + (["collegamento provato"] if ping else []) + ([f"{rotti} messaggi non leggibili"] if rotti else [])
         return " · ".join(parti)
