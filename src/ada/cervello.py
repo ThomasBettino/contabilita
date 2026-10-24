@@ -655,6 +655,10 @@ class Ada:
         righe = [f"IN ATTESA DELL'UTENTE: {len(att)}"] + [
             f"- [{a['tipo']}/{a['stato']}] {a['titolo']} (da {max(0, (ora - a['ts']) // 60)} min)" for a in att]
         righe += [f"SEGNALAZIONI APERTE: {len(seg)}"] + [f"- #{s['id']} {s['agente']}: {s['problema']}" for s in seg]
+        collaudi = self.db.tutti("SELECT id, ts, categoria, voto, problemi FROM collaudi ORDER BY id DESC LIMIT 5")
+        righe += ["COLLAUDI RECENTI (voto e punti deboli trovati):"] + [
+            f"- #{c['id']} {time.strftime('%d/%m %H:%M', time.localtime(c['ts']))} «{c['categoria']}» {c['voto']}/10: "
+            f"{'; '.join(json.loads(c['problemi'] or '[]')) or 'nessun punto debole'}"[:300] for c in collaudi]
         righe += ["ROUTINE:"] + [f"- {r['nome']} ({'attiva' if r['attiva'] else 'spenta'}), ultima: {r['esito'] or 'mai eseguita'}"
                                  for r in rou]
         idee = self.db.tutti(f"SELECT titolo, stato FROM idee WHERE ts>? OR stato IN {IDEE_APERTE} ORDER BY id DESC LIMIT 12",

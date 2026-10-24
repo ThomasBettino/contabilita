@@ -200,8 +200,9 @@ class Collaudo:
             self.ada.segnala("ada", f"Collaudo «{categoria}» (voto {voto}/10): {problemi[0]}"
                              + (f" Regola suggerita: {regola}" if regola else ""), "collaudo")
             segnalato = True
-        self.ada.log("collaudatore", "collaudo", f"{categoria}: {voto}/10" + (" · segnalato" if segnalato else ""))
-        return f"«{categoria}»: voto {voto}/10" + (" · segnalato per il miglioramento" if segnalato else "")
+        punto = f" · punto debole: {problemi[0][:160]}" if problemi else ""  # senza, Ada vedrebbe il voto ma non cosa correggere
+        self.ada.log("collaudatore", "collaudo", f"{categoria}: {voto}/10{punto}" + (" · segnalato" if segnalato else ""))
+        return f"«{categoria}»: voto {voto}/10{punto}" + (" · segnalato per il miglioramento" if segnalato else "")
 
     @staticmethod
     def _trascrizione(dialogo):
