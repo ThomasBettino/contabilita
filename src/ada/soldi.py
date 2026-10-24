@@ -115,8 +115,8 @@ class Soldi:
         if l["errore"]:
             frase = f"Lettura notifiche Revolut: l'ultima ({fa} min fa) è FALLITA: {l['errore']}."
         else:
-            frase = (f"Lettura notifiche Revolut: ultima {fa} min fa, funziona. In quel momento nella tendina c'erano "
-                     f"{l['revolut']} notifiche Revolut ({l['nuovi']} movimenti nuovi, {l['non_riconosciuti']} non riconosciute). "
+            frase = (f"Lettura notifiche Revolut: ultima {fa} min fa, funziona. Nella tendina in quel momento: "
+                     f"notifiche Revolut {l['revolut']}, movimenti nuovi {l['nuovi']}, non riconosciute {l['non_riconosciuti']}. "
                      "Android mostra solo le notifiche ancora presenti: se una è stata cancellata prima della lettura non si recupera.")
         nr = self.non_riconosciute()
         if nr:

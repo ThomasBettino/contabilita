@@ -138,7 +138,7 @@ class TestAdaVedeLaLettura(Base):
         c.pian.esegui(c.db.uno("SELECT id FROM routine WHERE nome='notifiche'")["id"])
         r = c.ada._esegui("ada", "riepilogo_spese", {"periodo": "sempre"})
         self.assertIn("ultima 0 min fa, funziona", r)
-        self.assertIn("2 notifiche Revolut (1 movimenti nuovi, 1 non riconosciute)", r)
+        self.assertIn("notifiche Revolut 2, movimenti nuovi 1, non riconosciute 1", r)
         self.assertIn("Promo: Scopri", r)  # Ada vede cosa non sa leggere
         self.assertIn("Lettura notifiche Revolut: ultima", c.ada._esegui("ada", "stato_sistema", {}))
 
