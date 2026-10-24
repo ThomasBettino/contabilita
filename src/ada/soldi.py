@@ -1,7 +1,14 @@
 """Lettura dei movimenti (scritti da src.revolut.ingest) e riepiloghi per categoria."""
+import hashlib
+import re
 import sqlite3
 import time
+import uuid
+from datetime import date, timedelta
 from pathlib import Path
+
+from ..revolut.store import apri
+from .estratto import giorni_tra, leggi_estratto, numero
 
 # Regole semplici, in ordine: la prima che combacia vince. Il resto è "Altro".
 CATEGORIE = [
@@ -29,6 +36,10 @@ def categoria(controparte: str, extra=None) -> str:
         if any(p in c for p in parole):
             return nome
     return "Altro"
+
+
+def origine(chiave: str) -> str:
+    return "manuale" if chiave.startswith("manuale|") else "estratto" if chiave.startswith("estratto|") else "notifica"
 
 
 class Soldi:
@@ -97,6 +108,99 @@ class Soldi:
             return righe
         except sqlite3.Error:
             return []
+
+    # ---------- elenco e modifiche fatte dall'utente ----------
+    def elenco(self, mese=None, limite=300):
+        """I movimenti con la loro chiave (serve a rimuoverli), dal più recente."""
+        if mese is not None and not re.fullmatch(r"\d{4}-\d{2}", mese):
+            raise ValueError("Il mese deve essere nel formato 2026-10.")
+        sql = "SELECT chiave, quando, importo, controparte FROM movimenti" + (" WHERE CAST(quando AS TEXT) LIKE ?" if mese else "")
+        righe = self._leggi(sql + " ORDER BY CAST(quando AS TEXT) DESC LIMIT ?", ((mese + "%",) if mese else ()) + (limite,))
+        for r in righe:
+            r["quando"], r["origine"] = str(r["quando"]), origine(r["chiave"])
+        return righe
+
+    def aggiungi(self, data, importo, controparte, tipo):
+        """Un movimento scritto a mano (un pagamento che non è arrivato come notifica)."""
+        if tipo not in ("uscita", "entrata"):
+            raise ValueError("Scegli se è un'uscita o un'entrata.")
+        v = numero(importo)
+        if v is None or v <= 0 or v > 1_000_000:
+            raise ValueError("L'importo deve essere un numero maggiore di zero.")
+        nome = " ".join(str(controparte or "").split())
+        if not 1 <= len(nome) <= 80:
+            raise ValueError("Scrivi a chi o per cosa è (al massimo 80 caratteri).")
+        try:
+            giorno = date.fromisoformat(str(data or ""))
+        except ValueError:
+            raise ValueError("La data non è valida.") from None
+        if giorno > date.today() + timedelta(days=1) or giorno.year < 2000:
+            raise ValueError("La data non può essere nel futuro né prima del 2000.")
+        quando = f"{giorno.isoformat()} " + (time.strftime("%H:%M:%S") if giorno == date.today() else "12:00:00")
+        chiave = f"manuale|{uuid.uuid4().hex[:12]}"
+        db = apri(str(self.percorso))
+        try:
+            db.execute("INSERT INTO movimenti VALUES (?,?,?,?,?)",
+                       (chiave, quando, round(-v if tipo == "uscita" else v, 2), nome, "inserito a mano"))
+            db.commit()
+        finally:
+            db.close()
+        return {"chiave": chiave, "quando": quando, "importo": round(-v if tipo == "uscita" else v, 2), "controparte": nome}
+
+    def rimuovi(self, chiave):
+        """Toglie un movimento (anche uno letto da una notifica: ricordandolo, così non ritorna)."""
+        if not self.percorso.exists():
+            return False
+        db = apri(str(self.percorso))
+        try:
+            tolti = db.execute("DELETE FROM movimenti WHERE chiave=?", (str(chiave),)).rowcount
+            if tolti:
+                db.execute("INSERT OR IGNORE INTO rimossi VALUES (?)", (str(chiave),))
+            db.commit()
+        finally:
+            db.close()
+        return tolti == 1
+
+    def importa_estratto(self, testo):
+        """Confronta l'estratto conto con i movimenti: aggiunge quelli che mancano e segnala gli altri da controllare."""
+        letto = leggi_estratto(testo)
+        righe = sorted(letto["righe"], key=lambda r: (r["data"], r["ora"]))
+        if not righe:
+            raise ValueError("Nell'estratto non ho trovato movimenti da importare" +
+                             (f" (ignorati: {', '.join(f'{n} {m}' for m, n in letto['ignorate'].items())})." if letto["ignorate"] else "."))
+        db = apri(str(self.percorso))
+        try:
+            noti = [dict(zip(("chiave", "quando", "importo", "controparte"), r)) for r in
+                    db.execute("SELECT chiave, quando, importo, controparte FROM movimenti").fetchall()]
+            for n in noti:
+                n["giorno"] = str(n["quando"])[:10]
+            abbinati, nuovi_chiavi, presenti, viste = set(), [], 0, {}
+            for r in righe:
+                scelti = [n for n in noti if n["chiave"] not in abbinati and abs(n["importo"] - r["importo"]) < 0.005
+                          and giorni_tra(n["giorno"], r["data"]) <= 2]
+                if scelti:
+                    n = min(scelti, key=lambda x: giorni_tra(x["giorno"], r["data"]))
+                    abbinati.add(n["chiave"])
+                    presenti += 1
+                    if not (n["controparte"] or "").strip():
+                        db.execute("UPDATE movimenti SET controparte=? WHERE chiave=?", (r["descrizione"], n["chiave"]))
+                    continue
+                impronta = hashlib.sha1(f"{r['data']}|{r['importo']:.2f}|{r['descrizione']}".encode()).hexdigest()[:10]
+                viste[impronta] = viste.get(impronta, 0) + 1  # due righe identiche lo stesso giorno restano due movimenti
+                chiave = f"estratto|{r['data']}|{r['importo']:.2f}|{impronta}|{viste[impronta]}"
+                db.execute("INSERT OR IGNORE INTO movimenti VALUES (?,?,?,?,?)",
+                           (chiave, f"{r['data']} {r['ora']}", r["importo"], r["descrizione"], "da estratto conto"))
+                abbinati.add(chiave)
+                nuovi_chiavi.append(chiave)
+            db.commit()
+            primo, ultimo = righe[0]["data"], righe[-1]["data"]
+            dubbi = [n for n in noti if n["chiave"] not in abbinati and primo <= n["giorno"] <= ultimo]
+        finally:
+            db.close()
+        return {"righe": len(righe), "nuovi": len(nuovi_chiavi), "presenti": presenti, "ignorate": letto["ignorate"],
+                "periodo": [primo, ultimo], "chiavi_nuove": nuovi_chiavi, "totale_da_controllare": len(dubbi),
+                "da_controllare": [{"chiave": n["chiave"], "quando": str(n["quando"]), "importo": n["importo"],
+                                    "controparte": n["controparte"], "origine": origine(n["chiave"])} for n in dubbi[:40]]}
 
     def lettura(self):
         """Com'è andata l'ultima lettura delle notifiche (la scrive src.revolut.ingest), oppure None."""

@@ -14,6 +14,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from .agenti import AGENTI, Squadra
 from .cervello import Ada, strumenti_di
@@ -142,16 +143,20 @@ def crea_handler(ctx):
             host = re.sub(r":\d+$", "", self.headers.get("Host", "")).strip("[]")
             return host in LOOPBACK
 
-        def _corpo(self):
+        def _corpo(self, massimo=65536):
             if "application/json" not in self.headers.get("Content-Type", ""):
                 raise ValueError("Content-Type deve essere application/json.")
             n = int(self.headers.get("Content-Length") or 0)
-            if n > 65536:
-                raise ValueError("Richiesta troppo grande.")
+            if n > massimo:
+                restante = min(n, 20_000_000)  # si legge e si butta, così chi invia riceve la risposta e non un errore di rete
+                while restante > 0:
+                    restante -= len(self.rfile.read(min(65536, restante)) or b"\0" * restante)
+                raise ValueError("Richiesta troppo grande." if massimo <= 65536 else "Il file è troppo grande: carica un periodo più corto.")
             return json.loads(self.rfile.read(n) or b"{}")
 
         def do_GET(self):
             path = self.path.split("?")[0]
+            self.query = parse_qs(self.path.partition("?")[2])
             if path.startswith("/api/"):
                 return self._api("GET", path)
             rel = "index.html" if path == "/" else path.lstrip("/")
@@ -167,7 +172,7 @@ def crea_handler(ctx):
             if not self._ok_accesso():
                 return self._invia(401, {"errore": "accesso negato"})
             try:
-                corpo = self._corpo() if metodo == "POST" else {}
+                corpo = self._corpo(3_000_000 if path == "/api/estratto" else 65536) if metodo == "POST" else {}
                 self._invia(200, self._rotta(metodo, path, corpo))
             except LookupError as e:
                 self._invia(404, {"errore": str(e)})
@@ -195,7 +200,7 @@ def crea_handler(ctx):
                 return {"risposta": risposta, "azioni": json.loads(ultima["azioni"]) if ultima and ultima["azioni"] else []}
             if path == "/api/impostazioni/fatture" and metodo == "POST":
                 if not ctx.token:  # senza token qualunque app del telefono potrebbe leggere o cambiare i codici
-                    raise PermissionError("Per salvare i codici nell'app serve prima un token di accesso (ADA_TOKEN): vedi docs/FATTURE.md.")
+                    raise PermissionError("Per salvare i codici nell'app serve prima un token di accesso (ADA_TOKEN: in Termux scrivi «sh scripts/token.sh», vedi docs/FATTURE.md).")
                 url, tok = str(corpo.get("url", "")).strip(), str(corpo.get("token", "")).strip()
                 if not url.startswith(HOST_SCRIPT) or not tok:
                     raise ValueError("L'indirizzo deve iniziare con https://script.google.com/ e il codice non può essere vuoto.")
@@ -228,14 +233,35 @@ def crea_handler(ctx):
                 except ErroreFatture as e:
                     raise ValueError(f"Script non raggiungibile: {e}")
                 return {"messaggio": msg}
+            if metodo == "GET" and path == "/api/movimenti":
+                mese = (self.query.get("mese") or [time.strftime("%Y-%m")])[0]
+                return {"mese": mese, "movimenti": ctx.ada.soldi.elenco(mese)}
+            if path in ("/api/movimenti", "/api/movimenti/rimuovi", "/api/estratto") and metodo == "POST":
+                if not ctx.token:  # cambia i conti, e da lì le fatture da incassare: mai senza token
+                    raise PermissionError("Per modificare i movimenti o caricare un estratto serve prima un token di accesso (ADA_TOKEN: in Termux scrivi «sh scripts/token.sh», vedi docs/AVVIO.md).")
+                soldi = ctx.ada.soldi
+                if path == "/api/movimenti":
+                    m = soldi.aggiungi(corpo.get("data"), corpo.get("importo"), corpo.get("controparte"), corpo.get("tipo"))
+                    ctx.ada.log("utente", "movimento aggiunto", m["controparte"])
+                    return m
+                if path == "/api/movimenti/rimuovi":
+                    if not soldi.rimuovi(corpo.get("chiave", "")):
+                        raise LookupError("Movimento non trovato (forse è già stato tolto).")
+                    ctx.ada.log("utente", "movimento rimosso")
+                    return {"ok": True}
+                r = soldi.importa_estratto(str(corpo.get("testo", "")))
+                for chiave in r.pop("chiavi_nuove"):  # i movimenti storici non devono far scattare avvisi o abbinamenti alle fatture
+                    ctx.db.esegui("INSERT OR IGNORE INTO movimenti_visti VALUES (?)", (chiave,))
+                ctx.ada.log("utente", "estratto conto", f"{str(corpo.get('nome', ''))[:40]}: {r['nuovi']} nuovi, {r['presenti']} già presenti")
+                return r
             if path == "/api/ritmo" and metodo == "POST":
                 if not ctx.token:  # cambia quanto si spende: mai senza token
-                    raise PermissionError("Per cambiare il ritmo di lavoro serve prima un token di accesso (ADA_TOKEN): vedi docs/AVVIO.md.")
+                    raise PermissionError("Per cambiare il ritmo di lavoro serve prima un token di accesso (ADA_TOKEN: in Termux scrivi «sh scripts/token.sh», vedi docs/AVVIO.md).")
                 ctx.pian.imposta_ritmo(str(corpo.get("ritmo", "")))
                 return {"scelto": ctx.pian.ritmo()}
             if path == "/api/aggiorna" and metodo == "POST":
                 if not ctx.token:  # cambia il programma che gira sul telefono: mai senza token
-                    raise PermissionError("Per aggiornare dall'app serve prima un token di accesso (ADA_TOKEN): vedi docs/AVVIO.md.")
+                    raise PermissionError("Per aggiornare dall'app serve prima un token di accesso (ADA_TOKEN: in Termux scrivi «sh scripts/token.sh», vedi docs/AVVIO.md).")
                 r = ctx.fn_aggiorna()
                 ctx.ada.log("utente", "aggiornamento", r["messaggio"][:140])
                 if r["cambiato"]:

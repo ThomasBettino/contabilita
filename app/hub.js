@@ -131,6 +131,20 @@ async function manda(testo) {
 $("form-chat").addEventListener("submit", (e) => { e.preventDefault(); manda($("testo").value); });
 $("sugg").addEventListener("click", (e) => { if (e.target.tagName === "BUTTON") manda(e.target.textContent); });
 
+/* ---------- schede del registro ---------- */
+const SCHEDE_REGISTRO = ["lavoro", "routine", "prove", "idee", "modifiche", "storico"];
+function mostraRegistro(scheda, ricorda = true) {
+  if (!SCHEDE_REGISTRO.includes(scheda)) scheda = "lavoro";
+  SCHEDE_REGISTRO.forEach((n) => { $("reg-" + n).hidden = n !== scheda; });
+  document.querySelectorAll("#seg-registro button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.r === scheda); b.setAttribute("aria-selected", String(b.dataset.r === scheda));
+  });
+  $("v-registro").scrollTop = 0;
+  if (ricorda) { try { localStorage.setItem("ada_registro", scheda); } catch (e) { /* storage bloccato */ } }
+}
+$("seg-registro").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) mostraRegistro(b.dataset.r); });
+try { mostraRegistro(localStorage.getItem("ada_registro") || "lavoro", false); } catch (e) { mostraRegistro("lavoro", false); }
+
 /* ---------- stato ---------- */
 let titoli = {};
 const nome = (id) => titoli[id] || id;
@@ -165,11 +179,12 @@ function disegna(s) {
       a.versioni ? h("span", { class: "tag ok" }, "v" + (a.versioni + 1)) : null))));
 
   svuota($("appr"), n ? s.approvazioni.map(cartaApprovazione) : h("div", { class: "vuoto" }, "Niente da approvare. Ti avviso io quando serve."));
-  svuota($("migl"), s.miglioramenti.length ? s.miglioramenti.map(cartaMiglioramento) : h("div", { class: "vuoto" }, "Ancora nessun miglioramento: partirò quando emergono problemi."));
-  svuota($("att"), s.attivita.length ? s.attivita.map((x) => h("div", { class: "voce" },
-    h("span", null, h("b", null, nome(x.agente)), " · ", x.azione, x.dettaglio ? " — " + x.dettaglio : ""),
-    h("span", { class: "meta" }, quando(x.ts)))) : h("div", { class: "vuoto" }, "Nessuna attività registrata."));
+  disegnaModifiche(s.miglioramenti);
+  disegnaStorico(s.attivita);
+  tokenAttivo = !!s.token_attivo;
   disegnaSoldi(s.soldi);
+  disegnaMovimentiNote();
+  caricaMovimenti();
   $("soldi-lettura").textContent = s.lettura || "";
   disegnaRitmo(s.ritmo || {}, s.token_attivo);
   disegnaCollaudi(s.collaudi || []);
@@ -187,24 +202,56 @@ function disegna(s) {
 const STATO_IDEA = { proposta: ["in attesa del tuo ok", "warn"], approvata: ["approvata: da realizzare", "ok"],
   fatta: ["realizzata", "ok"], rifiutata: ["rifiutata", "bad"] };
 
+function cartaIdea(i) {
+  const [testo, colore] = STATO_IDEA[i.stato] || [i.stato, ""];
+  const copia = async () => {
+    try { await navigator.clipboard.writeText(i.brief); toast("Testo copiato: incollalo a chi sviluppa"); }
+    catch (e) { toast("Non riesco a copiare: apri l'idea e selezionala a mano"); }
+  };
+  const fatta = async () => {
+    try { await api(`/api/idee/${i.id}/fatta`, {}); toast("Segnata come realizzata"); aggiorna(); } catch (e) { toast(e.message); }
+  };
+  return h("div", { class: "voce" },
+    h("div", null, h("span", { class: "tag " + colore }, testo)),
+    h("b", null, i.titolo), h("span", null, i.descrizione),
+    h("span", { class: "meta" }, `Perché: ${i.motivo} · ${quando(i.ts)}`),
+    i.stato === "approvata" ? h("div", { class: "azioni ripiega" },
+      h("button", { class: "secondario", type: "button", onclick: copia }, "Copia il testo per lo sviluppo"),
+      h("button", { class: "secondario", type: "button", onclick: fatta }, "Fatta")) : null);
+}
+
+/* Un gruppo di schede con titolo e conteggio; chiuso = ripiegato in un «dettagli». */
+function gruppo(titolo, elementi, schede, chiuso) {
+  if (!elementi.length) return null;
+  const lista = h("div", { class: "lista" }, elementi.map(schede));
+  const testa = `${titolo} (${elementi.length})`;
+  return chiuso ? h("details", { class: "gruppo" }, h("summary", null, testa), lista) : h("div", { class: "blocco" }, h("h3", null, testa), lista);
+}
+
 function disegnaIdee(idee) {
-  svuota($("idee"), idee.length ? idee.map((i) => {
-    const [testo, colore] = STATO_IDEA[i.stato] || [i.stato, ""];
-    const copia = async () => {
-      try { await navigator.clipboard.writeText(i.brief); toast("Testo copiato: incollalo a chi sviluppa"); }
-      catch (e) { toast("Non riesco a copiare: apri l'idea e selezionala a mano"); }
-    };
-    const fatta = async () => {
-      try { await api(`/api/idee/${i.id}/fatta`, {}); toast("Segnata come realizzata"); aggiorna(); } catch (e) { toast(e.message); }
-    };
-    return h("div", { class: "voce" },
-      h("div", null, h("span", { class: "tag " + colore }, testo)),
-      h("b", null, i.titolo), h("span", null, i.descrizione),
-      h("span", { class: "meta" }, `Perché: ${i.motivo} · ${quando(i.ts)}`),
-      i.stato === "approvata" ? h("div", { class: "azioni ripiega" },
-        h("button", { class: "secondario", type: "button", onclick: copia }, "Copia il testo per lo sviluppo"),
-        h("button", { class: "secondario", type: "button", onclick: fatta }, "Fatta")) : null);
-  }) : h("div", { class: "vuoto" }, "Ancora nessuna idea: ogni mattina Ada ne valuta una nuova."));
+  const di = (stati) => idee.filter((i) => stati.includes(i.stato));
+  const attesa = di(["proposta"]).length;
+  $("num-idee").hidden = !attesa; $("num-idee").textContent = attesa;
+  svuota($("idee"), idee.length ? [
+    gruppo("Da decidere", di(["proposta"]), cartaIdea),
+    gruppo("Da realizzare", di(["approvata"]), cartaIdea),
+    gruppo("Già chiuse", di(["fatta", "rifiutata"]), cartaIdea, true)]
+    : h("div", { class: "vuoto" }, "Ancora nessuna idea: ogni mattina Ada ne valuta una nuova."));
+}
+
+function disegnaModifiche(migl) {
+  const di = (stati) => migl.filter((m) => stati.includes(m.stato));
+  svuota($("migl"), migl.length ? [
+    gruppo("In attesa del tuo ok", di(["in_attesa"]), cartaMiglioramento),
+    gruppo("Attive: si possono annullare", di(["applicato"]), cartaMiglioramento),
+    gruppo("Annullate o rifiutate", di(["annullato", "rifiutato"]), cartaMiglioramento, true)]
+    : h("div", { class: "vuoto" }, "Ancora nessuna modifica: Ada interviene quando emergono problemi."));
+}
+
+function disegnaStorico(attivita) {
+  svuota($("att"), attivita.length ? attivita.map((x) => h("div", { class: "voce" },
+    h("span", null, h("b", null, nome(x.agente)), " · ", (FRASI_ATTIVITA[x.azione] || x.azione), x.dettaglio ? " — " + x.dettaglio : ""),
+    h("span", { class: "meta" }, quando(x.ts)))) : h("div", { class: "vuoto" }, "Nessuna attività registrata."));
 }
 
 function disegnaAggiornamento(tokenAttivo, v) {
@@ -213,7 +260,7 @@ function disegnaAggiornamento(tokenAttivo, v) {
   $("btn-aggiorna").disabled = !tokenAttivo;
   $("agg-nota").textContent = tokenAttivo
     ? "Scarica l'ultima versione, la collauda e riavvia Ada; se i test falliscono torna da sola a quella di prima."
-    : "Per aggiornare dall'app serve prima un token di accesso: vedi docs/AVVIO.md.";
+    : "Per aggiornare dall'app serve prima un token di accesso: in Termux scrivi «sh scripts/token.sh» (vedi docs/AVVIO.md).";
 }
 
 $("btn-aggiorna").addEventListener("click", async (e) => {
@@ -236,7 +283,7 @@ function disegnaFatture(f) {
   if (!f.configurato) {
     $("fatt-nota").textContent = f.token_attivo
       ? "Archivio non collegato. Incolla qui sotto l'indirizzo e il codice segreto dello script Google (in Contabilità Smart: Avvisi, Impostazioni)."
-      : "Per collegare l'archivio dall'app serve prima un token di accesso: vedi docs/FATTURE.md.";
+      : "Per collegare l'archivio dall'app serve prima un token di accesso: in Termux scrivi «sh scripts/token.sh» (vedi docs/FATTURE.md).";
     svuota($("fatt-tessere")); svuota($("fatt-lista")); $("btn-sync-fatture").hidden = true;
     return;
   }
@@ -303,7 +350,7 @@ function disegnaRitmo(r, tokenAttivo) {
     } }, o.etichetta)));
   const scelto = opzioni[r.scelto];
   $("ritmo-nota").textContent = !Object.keys(opzioni).length ? "Ada gira ancora con la versione vecchia: riavviala per vedere i ritmi (vedi docs/AVVIO.md, «Se il telefono si spegne o si riavvia»)."
-    : !tokenAttivo ? "Per cambiare il ritmo serve prima un token di accesso: vedi docs/AVVIO.md."
+    : !tokenAttivo ? "Per cambiare il ritmo serve prima un token di accesso: in Termux scrivi «sh scripts/token.sh» (vedi docs/AVVIO.md)."
     : scelto ? scelto.descrizione : "";
 }
 
@@ -347,7 +394,7 @@ function impostaTimer(el, r, prefisso) {
   } else {
     delete el.dataset.prossima;
     const testo = el.querySelector(".timer-testo") || el;
-    testo.textContent = r ? "In pausa: nessun timer attivo." : "";
+    testo.textContent = r ? `${prefisso}: in pausa.` : "";
   }
 }
 function ticTimer() {
@@ -371,27 +418,48 @@ function timerRoutine(r) {
   return el;
 }
 
+const ETICHETTE_ROUTINE = {
+  notifiche: "Lettura notifiche Revolut", fatture: "Archivio fatture e bonifici", miglioria_quotidiana: "Miglioria del giorno",
+  miglioramento: "Correzione dei prompt", collaudo: "Collaudo di Ada", studio: "Studio dei grandi pensatori", lettura: "Lettura dei tuoi libri",
+  riepilogo_sera: "Riepilogo della sera", promemoria_approvazioni: "Promemoria delle approvazioni",
+};
+const GRUPPI_ROUTINE = [
+  ["Soldi", ["notifiche", "fatture"]],
+  ["Ada che migliora sé stessa", ["miglioria_quotidiana", "miglioramento", "collaudo", "studio", "lettura"]],
+  ["Riepiloghi e promemoria", ["riepilogo_sera", "promemoria_approvazioni"]],
+];
+
+function cartaRoutine(r) {
+  const esegui = async (e) => {
+    e.target.disabled = true; toast("Ada ci sta lavorando…");
+    try { const x = await api(`/api/routine/${r.id}/esegui`, {}); toast(x.esito.slice(0, 120)); caricaChat(); }
+    catch (err) { toast(err.message); }
+    finally { e.target.disabled = false; aggiorna(); }
+  };
+  const alterna = async () => { try { await api("/api/routine/" + r.id, { attiva: !r.attiva }); aggiorna(); } catch (err) { toast(err.message); } };
+  return h("div", { class: "voce" },
+    h("div", { class: "riga" }, h("b", null, ETICHETTE_ROUTINE[r.nome] || r.nome.replace(/_/g, " ")),
+      h("span", null, h("span", { class: "tag " + (r.attiva ? "ok" : "") }, r.attiva ? "attiva" : "spenta"), " ", h("span", { class: "tag" }, quandoRoutine(r)))),
+    h("span", { class: "meta" }, r.descrizione),
+    timerRoutine(r),
+    r.ultima ? h("span", { class: "meta" }, `Ultima: ${quando(r.ultima)} · ${r.esito || ""}`) : h("span", { class: "meta" }, "Mai eseguita"),
+    h("div", { class: "azioni" },
+      h("button", { class: "secondario", type: "button", onclick: esegui }, "Esegui ora"),
+      h("button", { class: "secondario", type: "button", onclick: alterna }, r.attiva ? "Disattiva" : "Attiva")));
+}
+
 function disegnaRoutine(routine, c) {
   const fmt = (n) => new Intl.NumberFormat("it-IT").format(n);
-  $("consumo").textContent = c ? `Consumo di oggi: ${fmt(c.totale)} token in tutto (${c.chiamate} chiamate). Lavori automatici: ${fmt(c.automatici)} su un tetto di ${fmt(c.limite)}; la tua chat non lo consuma.` : "";
-  svuota($("routine"), routine.map((r) => {
-    const esegui = async (e) => {
-      e.target.disabled = true; toast("Ada ci sta lavorando…");
-      try { const x = await api(`/api/routine/${r.id}/esegui`, {}); toast(x.esito.slice(0, 120)); caricaChat(); }
-      catch (err) { toast(err.message); }
-      finally { e.target.disabled = false; aggiorna(); }
-    };
-    const alterna = async () => { try { await api("/api/routine/" + r.id, { attiva: !r.attiva }); aggiorna(); } catch (err) { toast(err.message); } };
-    return h("div", { class: "voce" },
-      h("div", null, h("span", { class: "tag " + (r.attiva ? "ok" : "") }, r.attiva ? "attiva" : "spenta"), " ",
-        h("span", { class: "tag" }, quandoRoutine(r))),
-      h("b", null, r.nome.replace(/_/g, " ")), h("span", null, r.descrizione),
-      r.ultima ? h("span", { class: "meta" }, `Ultima: ${quando(r.ultima)} · ${r.esito || ""}`) : h("span", { class: "meta" }, "Mai eseguita"),
-      timerRoutine(r),
-      h("div", { class: "azioni" },
-        h("button", { class: "secondario", type: "button", onclick: esegui }, "Esegui ora"),
-        h("button", { class: "secondario", type: "button", onclick: alterna }, r.attiva ? "Disattiva" : "Attiva")));
-  }));
+  const perc = c && c.limite ? Math.min(100, Math.round(100 * c.automatici / c.limite)) : 0;
+  const barra = h("i"); barra.style.width = perc + "%";
+  svuota($("consumo"), c ? [
+    h("div", { class: "riga" }, h("span", null, "Lavori automatici"), h("b", null, `${fmt(c.automatici)} / ${fmt(c.limite)} token`)),
+    h("div", { class: "traccia" }, barra),
+    h("span", { class: "meta" }, `Con la tua chat oggi: ${fmt(c.totale)} token in ${c.chiamate} chiamate. La chat non ha tetto e non lo consuma.`)] : null);
+  const usate = new Set(GRUPPI_ROUTINE.flatMap(([, nomi]) => nomi));
+  const gruppi = [...GRUPPI_ROUTINE.map(([titolo, nomi]) => [titolo, routine.filter((r) => nomi.includes(r.nome))]),
+    ["Create da Ada", routine.filter((r) => !usate.has(r.nome))]];
+  svuota($("routine"), gruppi.map(([titolo, elenco]) => gruppo(titolo, elenco, cartaRoutine)));
 }
 
 const stelle = (n) => (n == null ? "" : "★ " + String(n).replace(".", ","));
@@ -482,10 +550,107 @@ function disegnaSoldi(s) {
     return h("div", { class: "barra-riga" }, h("div", null, h("span", null, c.nome), h("b", null, eur(c.totale))), h("div", { class: "traccia" }, i));
   }));
   svuota($("esercenti"), s.top_esercenti.map((e) => h("div", { class: "voce" }, h("span", null, e.nome), h("span", { class: "importo neg" }, eur(e.totale)))));
-  svuota($("ultimi"), s.ultimi.map((m) => h("div", { class: "voce" },
-    h("span", null, m.controparte || "(senza nome)", h("br"), h("span", { class: "meta" }, m.quando)),
-    h("span", { class: "importo " + (m.importo < 0 ? "neg" : "pos") }, eur(m.importo)))));
 }
+
+/* ---------- movimenti a mano ed estratto conto ---------- */
+let tokenAttivo = false;
+const due2 = (n) => String(n).padStart(2, "0");
+const meseDi = (d) => `${d.getFullYear()}-${due2(d.getMonth() + 1)}`;
+const oggiLocale = () => { const d = new Date(); return `${meseDi(d)}-${due2(d.getDate())}`; };
+let meseMov = meseDi(new Date());
+const ORIGINI = { notifica: "da notifica", manuale: "a mano", estratto: "da estratto" };
+const breve = (q) => { const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(q); return m ? `${m[3]}/${m[2]} ${m[4]}` : q; };
+const giorno = (iso) => iso.split("-").reverse().slice(0, 2).join("/") + "/" + iso.slice(2, 4);
+
+function preparaMovimenti() {
+  const mesi = Array.from({ length: 12 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); return d; });
+  svuota($("mov-mese"), mesi.map((d) => h("option", { value: meseDi(d), selected: meseDi(d) === meseMov },
+    d.toLocaleString("it-IT", { month: "long", year: "numeric" }))));
+  $("mov-data").value = $("mov-data").max = oggiLocale();
+}
+preparaMovimenti();
+
+function rigaMovimento(m) {
+  const riga = h("div", { class: "voce movimento" },
+    h("div", { class: "riga" },
+      h("span", null, m.controparte || "(senza nome)", h("br"), h("span", { class: "meta" }, `${breve(m.quando)} · ${ORIGINI[m.origine] || m.origine}`)),
+      h("span", { class: "importo " + (m.importo < 0 ? "neg" : "pos") }, eur(m.importo))),
+    h("button", { class: "x", type: "button", disabled: !tokenAttivo, title: "Togli questo movimento", "aria-label": "Togli " + (m.controparte || "movimento"),
+      onclick: async () => {
+        if (!confirm(`Tolgo «${m.controparte || "senza nome"}» di ${eur(m.importo)}?`)) return;
+        try { await api("/api/movimenti/rimuovi", { chiave: m.chiave }); riga.remove(); toast("Movimento tolto"); caricaMovimenti(); aggiorna(); }
+        catch (e) { toast(e.message); }
+      } }, "✕"));
+  return riga;
+}
+
+async function caricaMovimenti() {
+  try {
+    const j = await api("/api/movimenti?mese=" + meseMov);
+    svuota($("movimenti"), j.movimenti.length ? j.movimenti.map(rigaMovimento) : h("div", { class: "vuoto" }, "Nessun movimento in questo mese."));
+  } catch (e) { /* lo stato in alto già dice che Ada non risponde */ }
+}
+
+function disegnaMovimentiNote() {
+  $("mov-nota").textContent = tokenAttivo
+    ? "Ada legge solo le notifiche di Revolut: qui puoi aggiungere un pagamento che manca o togliere uno sbagliato."
+    : "Per aggiungere o togliere movimenti serve prima il token di accesso: in Termux scrivi «sh scripts/token.sh» (vedi docs/AVVIO.md).";
+  $("estratto-nota").textContent = tokenAttivo
+    ? "Carica l'estratto in CSV (in Revolut: Conti, tre puntini, Estratto, formato Excel o CSV). Ada aggiunge ciò che manca e ti mostra ciò che ha nel conto ma non trova nell'estratto: così i conti tornano. I PDF non si leggono."
+    : "Per caricare un estratto serve prima il token di accesso (vedi sopra).";
+  $("btn-mov-nuovo").disabled = $("btn-estratto").disabled = !tokenAttivo;
+  if (!tokenAttivo) $("form-mov").hidden = true;
+}
+
+$("mov-mese").addEventListener("change", (e) => { meseMov = e.target.value; caricaMovimenti(); });
+$("btn-mov-nuovo").addEventListener("click", () => { $("form-mov").hidden = !$("form-mov").hidden; if (!$("form-mov").hidden) $("mov-importo").focus(); });
+$("mov-tipo").addEventListener("click", (e) => {
+  if (!e.target.dataset.t) return;
+  $("mov-tipo").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.target));
+});
+$("form-mov").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const tipo = $("mov-tipo").querySelector("button.on").dataset.t;
+  try {
+    await api("/api/movimenti", { tipo, importo: $("mov-importo").value, controparte: $("mov-desc").value, data: $("mov-data").value });
+    toast(tipo === "uscita" ? "Uscita aggiunta" : "Entrata aggiunta");
+    $("mov-importo").value = $("mov-desc").value = ""; $("form-mov").hidden = true;
+    if ($("mov-data").value.slice(0, 7) !== meseMov) { meseMov = $("mov-data").value.slice(0, 7); preparaMovimenti(); }
+    caricaMovimenti(); aggiorna();
+  } catch (err) { toast(err.message); }
+});
+
+function mostraEsitoEstratto(r) {
+  const ignorate = Object.entries(r.ignorate).map(([motivo, n]) => `${n} ${motivo}`).join(", ");
+  svuota($("estratto-esito"),
+    h("div", { class: "voce" },
+      h("div", null, h("span", { class: "tag ok" }, "Estratto letto")),
+      h("b", null, `Dal ${giorno(r.periodo[0])} al ${giorno(r.periodo[1])}: ${r.righe} movimenti`),
+      h("span", null, `${r.presenti} c'erano già, ${r.nuovi} aggiunti.` + (ignorate ? ` Non importati: ${ignorate}.` : "")),
+      h("span", { class: "meta" }, "I movimenti aggiunti dall'estratto non fanno scattare avvisi né cambiano le fatture da incassare.")),
+    r.totale_da_controllare
+      ? [h("h3", null, `Da controllare (${r.totale_da_controllare})`),
+         h("p", { class: "nota" }, "Sono nel conto di Ada ma nell'estratto, in quel periodo, non ci sono: possono essere doppioni o pagamenti ancora in sospeso. Togli quelli sbagliati."),
+         h("div", { class: "lista compatta" }, r.da_controllare.map(rigaMovimento))]
+      : h("p", { class: "nota" }, "Tutto torna: ogni movimento del periodo è anche nell'estratto."));
+}
+
+$("btn-estratto").addEventListener("click", () => $("estratto-file").click());
+$("estratto-file").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  if (f.size > 2500000) { toast("Il file è troppo grande: carica un periodo più corto."); return; }
+  toast("Leggo l'estratto…");
+  try {
+    const buf = await f.arrayBuffer();
+    let testo;
+    try { testo = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (x) { testo = new TextDecoder("windows-1252").decode(buf); }
+    mostraEsitoEstratto(await api("/api/estratto", { nome: f.name, testo }));
+    caricaMovimenti(); aggiorna();
+  } catch (err) {
+    svuota($("estratto-esito"), h("div", { class: "voce" }, h("div", null, h("span", { class: "tag bad" }, "Non riuscito")), h("span", null, err.message)));
+  }
+});
 
 $("btn-collega").addEventListener("click", async (e) => {
   const porta = prompt("Con il wifi acceso e il Debug wireless attivo, lascia vuoto per cercare la porta da solo, oppure scrivi la porta che vedi in Debug wireless (5 cifre)", "");

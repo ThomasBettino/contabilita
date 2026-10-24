@@ -229,3 +229,24 @@ dialog h4 { margin: 16px 0 8px; font-size: 12.5px; text-transform: uppercase; le
 .timer { display: flex; flex-direction: column; gap: 5px; }
 .timer-barra { height: 4px; border-radius: 4px; background: var(--linea); overflow: hidden; }
 .timer-barra span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--cy), #9b7bff); transition: width 1s linear; }
+
+/* registro a schede */
+.segmento.scorri { flex: none; align-self: stretch; overflow-x: auto; scrollbar-width: none; }
+.segmento.scorri::-webkit-scrollbar { display: none; }
+.segmento.scorri button { flex: none; white-space: nowrap; padding: 7px 13px; }
+.segmento .num { margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: #1a1100; font-size: 11px; display: inline-grid; place-items: center; }
+.segmento .num[hidden] { display: none; }
+details.gruppo { background: var(--pannello); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 14px; }
+details.gruppo summary { cursor: pointer; font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--tenue); }
+details.gruppo .lista { margin-top: 10px; }
+.voce .riga { flex-wrap: wrap; }
+/* movimenti a mano */
+.riga-azioni.ripiega { flex-wrap: wrap; gap: 8px; align-items: center; }
+#mov-mese { background: var(--pannello-2); border: 1px solid var(--linea); border-radius: 10px; padding: 8px 10px; color: var(--testo); text-transform: capitalize; }
+#form-mov input { background: var(--bg); border: 1px solid var(--linea); border-radius: 12px; padding: 12px 14px; outline: none; width: 100%; color-scheme: dark; }
+#form-mov input:focus { border-color: var(--cy); box-shadow: 0 0 0 3px rgba(67,229,255,.15); }
+#form-mov .segmento { align-self: flex-start; }
+.voce.movimento { flex-direction: row; align-items: center; gap: 10px; }
+.voce.movimento .riga { flex: 1; min-width: 0; flex-wrap: nowrap; align-items: center; }
+.voce .x { flex: none; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--linea); background: var(--pannello-2); color: var(--tenue); }
+.voce .x:disabled { opacity: .35; }

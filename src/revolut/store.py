@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS movimenti (
   chiave TEXT PRIMARY KEY, quando INTEGER, importo REAL, controparte TEXT, testo TEXT);
 CREATE TABLE IF NOT EXISTS non_riconosciute (
   chiave TEXT PRIMARY KEY, quando INTEGER, titolo TEXT, contenuto TEXT);
+CREATE TABLE IF NOT EXISTS rimossi (chiave TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS letture (
   id INTEGER PRIMARY KEY CHECK (id = 1), quando INTEGER, totale INTEGER, revolut INTEGER, nuovi INTEGER,
   non_riconosciuti INTEGER, errore TEXT);
@@ -20,6 +21,8 @@ def apri(percorso: str) -> sqlite3.Connection:
 
 
 def salva_movimento(db, chiave, quando, mov) -> bool:
+    if db.execute("SELECT 1 FROM rimossi WHERE chiave=?", (chiave,)).fetchone():
+        return False  # l'utente lo ha rimosso: la stessa notifica ancora nella tendina non lo fa tornare
     cur = db.execute("INSERT OR IGNORE INTO movimenti VALUES (?,?,?,?,?)",
                      (chiave, quando, mov.importo, mov.controparte, mov.testo))
     db.commit()
