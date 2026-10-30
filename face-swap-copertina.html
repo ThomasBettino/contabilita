@@ -44,6 +44,7 @@
   .stage[hidden] { display: none; }
   #out { display: block; width: 100%; height: auto; border-radius: 8px; }
   .overlay { position: absolute; left: 8px; top: 8px; right: 8px; bottom: 8px; pointer-events: none; }
+  canvas.overlay { width: calc(100% - 16px); height: calc(100% - 16px); }
   .overlay button { position: absolute; pointer-events: auto; padding: 0; min-height: 0; border-radius: 10px; background: transparent;
     border: 2px solid rgba(255,255,255,.85); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
   .overlay button.sel { border-color: var(--accent); border-width: 3px; }
@@ -75,6 +76,7 @@
 
   <section class="stage" id="stage" hidden>
     <canvas id="out" width="10" height="10"></canvas>
+    <canvas class="overlay" id="dbg"></canvas>
     <div class="overlay" id="overlay"></div>
   </section>
 
@@ -83,6 +85,7 @@
     <div class="row"><span>Adatta colori e luce <em id="vColor"></em></span><input type="range" id="color" min="0" max="100" value="85"></div>
     <div class="row"><span>Bordi morbidi <em id="vFeather"></em></span><input type="range" id="feather" min="2" max="25" value="9"></div>
     <div class="row"><span>Intensità <em id="vAlpha"></em></span><input type="range" id="alpha" min="30" max="100" value="100"></div>
+    <label class="row" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" id="dbgOn"> Mostra dove l'AI ha trovato i volti</label>
   </details>
 
   <div class="actions" id="actions" hidden>
@@ -298,6 +301,17 @@ function rerender() {
 }
 ['color', 'feather', 'alpha'].forEach(id => $(id).oninput = rerender);
 
+function drawDbg() {
+  const d = $('dbg'); d.width = out.width; d.height = out.height;
+  const x = d.getContext('2d'); x.clearRect(0, 0, d.width, d.height);
+  if (!$('dbgOn').checked || !S.posterFaces) return;
+  const r = Math.max(2, d.width / 350);
+  S.posterFaces.forEach((lm, i) => {
+    x.fillStyle = i === S.sel ? '#ff2d55' : '#00e5ff';
+    for (const p of lm) { x.beginPath(); x.arc(p.x * d.width, p.y * d.height, r, 0, 7); x.fill(); }
+  });
+}
+$('dbgOn').onchange = drawDbg;
 function buildOverlay() {
   const ov = $('overlay'); ov.innerHTML = '';
   if (!S.posterFaces || S.posterFaces.length < 2) return;
@@ -306,7 +320,7 @@ function buildOverlay() {
     btn.style.cssText = `left:${b.x0 * 100}%;top:${b.y0 * 100}%;width:${(b.x1 - b.x0) * 100}%;height:${(b.y1 - b.y0) * 100}%`;
     btn.setAttribute('aria-label', 'Sostituisci il volto ' + (i + 1));
     if (i === S.sel) btn.className = 'sel';
-    btn.onclick = () => { S.sel = i; buildOverlay(); render(); };
+    btn.onclick = () => { S.sel = i; buildOverlay(); render(); drawDbg(); };
     ov.appendChild(btn);
   });
 }
@@ -321,10 +335,10 @@ $('go').onclick = async () => {
     if (!S.posterFaces) { status('Cerco i volti nella copertina…'); await tick(); S.posterFaces = await findFaces(S.poster); }
     if (!S.posterFaces.length) throw new Error('Non trovo volti nella copertina. Se è disegnata o i volti sono molto piccoli può non riconoscerli: prova con una copertina più nitida.');
     status('Adatto il viso alla copertina…'); await tick();
-    S.sel = 0; S.ready = true; rerender(); render(); buildOverlay();
+    S.sel = 0; S.ready = true; rerender(); render(); buildOverlay(); drawDbg();
     $('stage').hidden = $('tune').hidden = $('actions').hidden = false;
-    const n = S.posterFaces.length;
-    status(n > 1 ? `Fatto. Ho trovato ${n} volti: tocca quello che vuoi sostituire.` : 'Fatto.', 'ok');
+    const n = S.posterFaces.length, b = bbox(S.posterFaces[0]);
+    status(`Fatto. Volti trovati nella copertina: ${n} (il principale è largo il ${Math.round((b.x1 - b.x0) * 100)}% della foto, centro a ${Math.round((b.x0 + b.x1) * 50)}% / ${Math.round((b.y0 + b.y1) * 50)}%).` + (n > 1 ? ' Tocca il volto da sostituire.' : ''), 'ok');
     $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { status(e.message || String(e), 'err'); }
   S.busy = false; $('go').disabled = false;
