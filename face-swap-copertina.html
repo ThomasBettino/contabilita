@@ -142,38 +142,66 @@ $('faceIn').onchange = async e => {
   $('go').disabled = !(S.poster && S.face);
 };
 
-/* ---------- riconoscimento volti (MediaPipe Face Landmarker, punti del viso) ---------- */
-let fm = null, VIS = null;
+/* ---------- riconoscimento volti ----------
+   Motore 1: MediaPipe (468 punti). Motore 2, di riserva: face-api.js su CPU (68 punti + fronte stimata),
+   che non usa WebGL e parte anche sui telefoni dove MediaPipe non si avvia. */
+const FA = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/';
+let fm = null, VIS = null, engine = null;
+function loadScript(src) {
+  return new Promise((ok, ko) => {
+    const el = document.createElement('script'); el.src = src; el.crossOrigin = 'anonymous'; el.onload = ok;
+    el.onerror = () => ko(new Error('script non scaricato'));
+    document.head.appendChild(el);
+  });
+}
+const msg = e => (e && e.message) ? e.message : String(e);
 async function getFM() {
-  if (fm) return fm;
+  if (engine) return engine;
   const errs = [];
-  for (const v of ['0.10.14', '0.10.21', '0.10.18', '0.10.12', '0.10.9', '0.10.3']) {
-    const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + v + '/';
-    for (const delegate of ['CPU', 'GPU']) {
-      try {
-        const lib = await import(base + 'vision_bundle.mjs');
-        const files = await lib.FilesetResolver.forVisionTasks(base + 'wasm');
-        fm = await lib.FaceLandmarker.createFromOptions(files, {
-          baseOptions: { modelAssetPath: MODEL, delegate },
-          runningMode: 'IMAGE', numFaces: 8, minFaceDetectionConfidence: 0.4, minFacePresenceConfidence: 0.4 });
-        VIS = lib; window.AI_INFO = v + ' ' + delegate; break;
-      } catch (e) { console.error(v, delegate, e); errs.push(v + '/' + delegate + ': ' + (e && e.message || e)); }
-    }
-    if (fm) break;
+  try {
+    const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/';
+    const lib = await import(base + 'vision_bundle.mjs');
+    const files = await lib.FilesetResolver.forVisionTasks(base + 'wasm');
+    fm = await lib.FaceLandmarker.createFromOptions(files, {
+      baseOptions: { modelAssetPath: MODEL, delegate: 'CPU' },
+      runningMode: 'IMAGE', numFaces: 8, minFaceDetectionConfidence: 0.4, minFacePresenceConfidence: 0.4 });
+    VIS = lib; prepMesh(); engine = 'mp'; window.AI_INFO = 'MediaPipe';
+  } catch (e) { console.error(e); errs.push('MediaPipe: ' + msg(e)); fm = null; }
+  if (!engine) {
+    try {
+      status('Il motore principale non parte su questo telefono. Provo quello di riserva, più lento…');
+      if (typeof faceapi === 'undefined') await loadScript(FA + 'dist/face-api.js');
+      await faceapi.tf.setBackend('cpu'); await faceapi.tf.ready();
+      await faceapi.nets.tinyFaceDetector.loadFromUri(FA + 'model');
+      await faceapi.nets.faceLandmark68Net.loadFromUri(FA + 'model');
+      S.oval = [...Array(17).keys(), 68, 69, 70, 71, 72, 73, 74, 75, 76, 77];
+      engine = 'fa'; window.AI_INFO = 'riserva (CPU)';
+    } catch (e) { console.error(e); errs.push('Riserva: ' + msg(e)); }
   }
-  if (!fm) throw new Error('Non riesco ad avviare il motore AI. ' + errs.join(' | '));
-  prepMesh();
-  return fm;
+  if (!engine) throw new Error('Non riesco ad avviare il motore AI. ' + errs.join(' | '));
+  return engine;
+}
+function extendFA(P) {     // 68 punti + 10 punti stimati sulla fronte (dalle sopracciglia verso l'alto)
+  const avg = (a, b) => { let x = 0, y = 0; for (let i = a; i <= b; i++) { x += P[i].x; y += P[i].y; } const n = b - a + 1; return { x: x / n, y: y / n }; };
+  const brow = avg(17, 26), chin = P[8], ux = brow.x - chin.x, uy = brow.y - chin.y, h = Math.hypot(ux, uy) || 1;
+  const F = []; for (let i = 26; i >= 17; i--) F.push({ x: P[i].x + ux / h * 0.38 * h, y: P[i].y + uy / h * 0.38 * h });
+  return P.slice(0, 68).concat(F);
 }
 async function detectRegion(canvas, x, y, w, h) {
-  const m = await getFM();
+  await getFM();
   const SZ = 1024, k = Math.min(SZ / Math.max(w, h), 2);          // ingresso sempre quadrato e della stessa misura
   const t = document.createElement('canvas'); t.width = t.height = SZ;
   const tx = t.getContext('2d'); tx.fillStyle = '#000'; tx.fillRect(0, 0, SZ, SZ);
   tx.drawImage(canvas, x, y, w, h, 0, 0, Math.round(w * k), Math.round(h * k));
-  const res = m.detect(t).faceLandmarks || [];
-  return res.filter(lm => lm.length >= 468 && lm.every(p => isFinite(p.x) && isFinite(p.y) && p.x > -0.5 && p.x < 1.5 && p.y > -0.5 && p.y < 1.5))
-    .map(lm => lm.slice(0, 468).map(p => ({ x: (x + p.x * SZ / k) / canvas.width, y: (y + p.y * SZ / k) / canvas.height })));
+  const ok = p => isFinite(p.x) && isFinite(p.y) && p.x > -0.5 && p.x < 1.5 && p.y > -0.5 && p.y < 1.5;
+  let faces;
+  if (engine === 'mp') {
+    faces = (fm.detect(t).faceLandmarks || []).filter(lm => lm.length >= 468 && lm.every(ok)).map(lm => lm.slice(0, 468));
+  } else {
+    const rs = await faceapi.detectAllFaces(t, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 })).withFaceLandmarks();
+    faces = rs.map(r => extendFA(r.landmarks.positions.map(p => ({ x: p.x / SZ, y: p.y / SZ })))).filter(lm => lm.every(ok));
+  }
+  return faces.map(lm => lm.map(p => ({ x: (x + p.x * SZ / k) / canvas.width, y: (y + p.y * SZ / k) / canvas.height })));
 }
 const bbox = lm => { let a = 1, b = 1, c = 0, d = 0; for (const p of lm) { if (p.x < a) a = p.x; if (p.y < b) b = p.y; if (p.x > c) c = p.x; if (p.y > d) d = p.y; } return { x0: a, y0: b, x1: c, y1: d }; };
 const area = lm => { const b = bbox(lm); return (b.x1 - b.x0) * (b.y1 - b.y0); };
@@ -235,6 +263,32 @@ function softMask(poly, w, h, r) {
   for (let k = 0; k < 2; k++) { blur1d(a, t, w, h, r, true); blur1d(t, a, w, h, r, false); }
   return a;
 }
+function inCircle(P, t, p) {
+  const [a, b, c] = t.map(i => P[i]), ax = a.x - p.x, ay = a.y - p.y, bx = b.x - p.x, by = b.y - p.y, cx = c.x - p.x, cy = c.y - p.y;
+  const det = (ax * ax + ay * ay) * (bx * cy - cx * by) - (bx * bx + by * by) * (ax * cy - cx * ay) + (cx * cx + cy * cy) * (ax * by - bx * ay);
+  return ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) > 0 ? det > 0 : det < 0;
+}
+function delaunay(pts) {   // Bowyer-Watson
+  const n = pts.length; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  const d = Math.max(x1 - x0, y1 - y0) * 20, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const P = pts.concat([{ x: mx - d, y: my - d }, { x: mx, y: my + d }, { x: mx + d, y: my - d }]);
+  let T = [[n, n + 1, n + 2]];
+  for (let i = 0; i < n; i++) {
+    const bad = T.filter(t => inCircle(P, t, P[i])), cnt = {};
+    const key = (a, b) => a < b ? a + ',' + b : b + ',' + a;
+    for (const t of bad) for (const [a, b] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) cnt[key(a, b)] = (cnt[key(a, b)] || 0) + 1;
+    T = T.filter(t => !bad.includes(t));
+    for (const t of bad) for (const [a, b] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) if (cnt[key(a, b)] === 1) T.push([a, b, i]);
+  }
+  return T.filter(t => t.every(v => v < n));
+}
+function inPoly(p, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++)
+    if ((poly[i].y > p.y) !== (poly[j].y > p.y) && p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x) c = !c;
+  return c;
+}
 const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 
 /* ---------- sostituzione ---------- */
@@ -261,12 +315,17 @@ function render() {
   lc.width = bw; lc.height = bh;
   const lx = lc.getContext('2d', { willReadFrequently: true });
   lx.clearRect(0, 0, bw, bh);
-  for (const t of S.tris) {
+  let tris = S.tris;
+  if (engine === 'fa') {        // riserva: triangolazione calcolata sui punti del volto bersaglio, solo dentro l'ovale
+    const poly = S.oval.map(i => tp[i]);
+    tris = delaunay(tp).filter(t => inPoly({ x: (tp[t[0]].x + tp[t[1]].x + tp[t[2]].x) / 3, y: (tp[t[0]].y + tp[t[1]].y + tp[t[2]].y) / 3 }, poly));
+  }
+  for (const t of tris) {
     const d = t.map(i => ({ x: tp[i].x - bx, y: tp[i].y - by })), s = t.map(i => sp[i]);
     const m = affine(s, d); if (!m) continue;
     const gx = (d[0].x + d[1].x + d[2].x) / 3, gy = (d[0].y + d[1].y + d[2].y) / 3;
     lx.save(); lx.beginPath();
-    d.forEach((p, i) => { const l = Math.hypot(p.x - gx, p.y - gy) || 1, q = { x: p.x + (p.x - gx) / l * 0.8, y: p.y + (p.y - gy) / l * 0.8 }; i ? lx.lineTo(q.x, q.y) : lx.moveTo(q.x, q.y); });
+    d.forEach((p, i) => { const l = Math.hypot(p.x - gx, p.y - gy) || 1, q = { x: p.x + (p.x - gx) / l * 1.3, y: p.y + (p.y - gy) / l * 1.3 }; i ? lx.lineTo(q.x, q.y) : lx.moveTo(q.x, q.y); });
     lx.closePath(); lx.clip(); lx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]); lx.drawImage(S.face, 0, 0); lx.restore();
   }
 
