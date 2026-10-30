@@ -96,7 +96,6 @@
 </div>
 
 <script>
-const TV = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/';
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 const MAX_POSTER = 4000, MAX_FACE = 1600;
 const $ = id => document.getElementById(id);
@@ -144,38 +143,25 @@ $('faceIn').onchange = async e => {
 };
 
 /* ---------- riconoscimento volti (MediaPipe Face Landmarker, punti del viso) ---------- */
-let fm = null, VIS = null, VBASE = TV;
+let fm = null, VIS = null;
 async function getFM() {
   if (fm) return fm;
-  let step = 'programma AI';
-  try {
-    if (!VIS) {
-      const hosts = [TV, 'https://unpkg.com/@mediapipe/tasks-vision@0.10.14/'];
-      let last;
-      for (const h of hosts) { try { VIS = await import(h + 'vision_bundle.mjs'); VBASE = h; break; } catch (e) { last = e; } }
-      if (!VIS) throw last;
-    }
-    step = 'file di calcolo';
-    const files = await VIS.FilesetResolver.forVisionTasks(VBASE + 'wasm');
-    step = 'download del modello (circa 4 MB)';
-    const r = await fetch(MODEL);
-    if (!r.ok) throw new Error('risposta ' + r.status);
-    const buf = new Uint8Array(await r.arrayBuffer());
-    step = 'avvio del modello';
-    const errs = [];
-    for (const [via, delegate] of [['path', 'CPU'], ['path', 'GPU'], ['buffer', 'GPU'], ['buffer', 'CPU']]) {
+  const errs = [];
+  for (const v of ['0.10.14', '0.10.21', '0.10.18', '0.10.12', '0.10.9', '0.10.3']) {
+    const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + v + '/';
+    for (const delegate of ['CPU', 'GPU']) {
       try {
-        fm = await VIS.FaceLandmarker.createFromOptions(files, {
-          baseOptions: via === 'path' ? { modelAssetPath: MODEL, delegate } : { modelAssetBuffer: buf, delegate },
+        const lib = await import(base + 'vision_bundle.mjs');
+        const files = await lib.FilesetResolver.forVisionTasks(base + 'wasm');
+        fm = await lib.FaceLandmarker.createFromOptions(files, {
+          baseOptions: { modelAssetPath: MODEL, delegate },
           runningMode: 'IMAGE', numFaces: 8, minFaceDetectionConfidence: 0.4, minFacePresenceConfidence: 0.4 });
-        break;
-      } catch (e) { console.error(via, delegate, e); errs.push(via + '/' + delegate + ': ' + (e && e.message || e)); }
+        VIS = lib; window.AI_INFO = v + ' ' + delegate; break;
+      } catch (e) { console.error(v, delegate, e); errs.push(v + '/' + delegate + ': ' + (e && e.message || e)); }
     }
-    if (!fm) throw new Error(errs.join(' | '));
-  } catch (e) {
-    console.error(e);
-    throw new Error('Non riesco a caricare: ' + step + '. Dettaglio: ' + (e && e.message ? (e.name || 'Errore') + ': ' + e.message : 'nessun dettaglio (' + String(e) + ')').slice(0, 260));
+    if (fm) break;
   }
+  if (!fm) throw new Error('Non riesco ad avviare il motore AI. ' + errs.join(' | '));
   prepMesh();
   return fm;
 }
@@ -354,7 +340,7 @@ $('go').onclick = async () => {
     S.sel = 0; S.ready = true; rerender(); render(); buildOverlay(); drawDbg();
     $('stage').hidden = $('tune').hidden = $('actions').hidden = false;
     const n = S.posterFaces.length, b = bbox(S.posterFaces[0]);
-    status(`Fatto. Volti trovati nella copertina: ${n} (il principale è largo il ${Math.round((b.x1 - b.x0) * 100)}% della foto, centro a ${Math.round((b.x0 + b.x1) * 50)}% / ${Math.round((b.y0 + b.y1) * 50)}%).` + (n > 1 ? ' Tocca il volto da sostituire.' : ''), 'ok');
+    status(`Fatto (motore ${window.AI_INFO}). Volti trovati nella copertina: ${n} (il principale è largo il ${Math.round((b.x1 - b.x0) * 100)}% della foto, centro a ${Math.round((b.x0 + b.x1) * 50)}% / ${Math.round((b.y0 + b.y1) * 50)}%).` + (n > 1 ? ' Tocca il volto da sostituire.' : ''), 'ok');
     $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { console.error(e); const m = e && e.message || String(e); status(m.slice(0, 500), 'err'); }
   S.busy = false; $('go').disabled = false;
