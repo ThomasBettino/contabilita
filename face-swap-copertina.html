@@ -144,7 +144,7 @@ $('faceIn').onchange = async e => {
 };
 
 /* ---------- riconoscimento volti (MediaPipe Face Landmarker, punti del viso) ---------- */
-let fm = null, VIS = null;
+let fm = null, VIS = null, VBASE = TV;
 async function getFM() {
   if (fm) return fm;
   let step = 'programma AI';
@@ -152,11 +152,11 @@ async function getFM() {
     if (!VIS) {
       const hosts = [TV, 'https://unpkg.com/@mediapipe/tasks-vision@0.10.14/'];
       let last;
-      for (const h of hosts) { try { VIS = await import(h + 'vision_bundle.mjs'); VIS.base = h; break; } catch (e) { last = e; } }
+      for (const h of hosts) { try { VIS = await import(h + 'vision_bundle.mjs'); VBASE = h; break; } catch (e) { last = e; } }
       if (!VIS) throw last;
     }
     step = 'file di calcolo';
-    const files = await VIS.FilesetResolver.forVisionTasks(VIS.base + 'wasm');
+    const files = await VIS.FilesetResolver.forVisionTasks(VBASE + 'wasm');
     step = 'download del modello (circa 4 MB)';
     const r = await fetch(MODEL);
     if (!r.ok) throw new Error('risposta ' + r.status);
