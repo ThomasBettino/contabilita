@@ -2,206 +2,350 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Copertina Film Face Editor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161f">
+<title>Cambia Faccia Copertina</title>
 <style>
-  :root { --bg:#14151a; --card:#1f2128; --fg:#eceef3; --muted:#9aa0ae; --acc:#ff4d5e; }
+  /* Layout: una colonna da telefono. Due caselle di caricamento, un pulsante, poi il risultato a tutta larghezza. */
+  :root {
+    --bg: #f3f1ee; --panel: #ffffff; --ink: #1b1d27; --muted: #6c7080;
+    --line: #dcd9d4; --accent: #d93a4a; --accent-ink: #ffffff; --ok: #1f8a5b; --err: #c0392b;
+    --font: "Avenir Next", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #14161f; --panel: #1e212d; --ink: #eceef5; --muted: #9a9fb2;
+    --line: #333748; --accent: #ff5468; --accent-ink: #1a0a0d; --ok: #4cc38a; --err: #ff7b6b; color-scheme: dark; } }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  header { padding:16px; text-align:center; }
-  h1 { margin:0 0 4px; font-size:1.4rem; }
-  header p { margin:0; color:var(--muted); font-size:.9rem; }
-  main { display:grid; grid-template-columns: 320px 1fr; gap:16px; padding:16px; max-width:1200px; margin:auto; }
-  @media (max-width:800px){ main{ grid-template-columns:1fr; } }
-  .panel { background:var(--card); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:14px; }
-  label.file { display:block; border:2px dashed #3a3e4a; border-radius:10px; padding:12px; text-align:center; cursor:pointer; color:var(--muted); font-size:.9rem; }
-  label.file:hover { border-color:var(--acc); color:var(--fg); }
-  label.file input { display:none; }
-  label.file b { display:block; color:var(--fg); margin-bottom:2px; }
-  .row { display:flex; flex-direction:column; gap:4px; font-size:.85rem; }
-  .row span { display:flex; justify-content:space-between; color:var(--muted); }
-  input[type=range] { width:100%; accent-color:var(--acc); }
-  button { background:var(--acc); color:#fff; border:0; border-radius:10px; padding:12px; font-size:1rem; cursor:pointer; font-weight:600; }
-  button.sec { background:#2c2f39; }
-  button:disabled { opacity:.4; cursor:not-allowed; }
-  .stage { background:var(--card); border-radius:12px; padding:12px; display:flex; align-items:center; justify-content:center; min-height:300px; }
-  canvas { max-width:100%; max-height:80vh; touch-action:none; cursor:grab; border-radius:6px; }
-  canvas:active { cursor:grabbing; }
-  .hint { color:var(--muted); font-size:.8rem; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.45 var(--font);
+    padding-block: max(16px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 1.5rem; line-height: 1.15; margin: 4px 0 0; letter-spacing: -.01em; text-wrap: balance; }
+  .sub { margin: 0; color: var(--muted); font-size: .92rem; }
+  .pick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tile { position: relative; aspect-ratio: 3 / 4; border: 2px dashed var(--line); border-radius: 14px; background: var(--panel);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center;
+    padding: 10px; cursor: pointer; overflow: hidden; color: var(--muted); font-size: .85rem; }
+  .tile b { color: var(--ink); font-size: .98rem; }
+  .tile input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+  .tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .tile.has { border-style: solid; border-color: var(--accent); }
+  .tile .badge { position: absolute; left: 8px; bottom: 8px; right: 8px; background: rgba(0,0,0,.62); color: #fff;
+    border-radius: 8px; padding: 4px 8px; font-size: .75rem; z-index: 1; }
+  button { font: inherit; font-weight: 650; border: 0; border-radius: 12px; padding: 14px 16px; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); min-height: 50px; }
+  button.sec { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:focus-visible, .tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; }
+  #status { min-height: 1.4em; margin: 0; font-size: .92rem; color: var(--muted); }
+  #status.err { color: var(--err); } #status.ok { color: var(--ok); }
+  .stage { position: relative; background: var(--panel); border-radius: 14px; padding: 8px; }
+  .stage[hidden] { display: none; }
+  #out { display: block; width: 100%; height: auto; border-radius: 8px; }
+  .overlay { position: absolute; left: 8px; top: 8px; right: 8px; bottom: 8px; pointer-events: none; }
+  .overlay button { position: absolute; pointer-events: auto; padding: 0; min-height: 0; border-radius: 10px; background: transparent;
+    border: 2px solid rgba(255,255,255,.85); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+  .overlay button.sel { border-color: var(--accent); border-width: 3px; }
+  details { background: var(--panel); border-radius: 14px; padding: 12px 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .row { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; font-size: .88rem; }
+  .row span { display: flex; justify-content: space-between; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+  .hint { color: var(--muted); font-size: .8rem; margin: 0; }
 </style>
 </head>
 <body>
-<header>
-  <h1>🎬 Copertina Film Face Editor</h1>
-  <p>Carica la copertina e la foto del viso, poi trascina e regola finché si adatta.</p>
-</header>
-<main>
-  <section class="panel">
-    <label class="file"><b>1. Copertina del film</b><span id="n1">Clicca per scegliere</span>
+<div class="wrap">
+  <header>
+    <h1>Metti un viso su una copertina</h1>
+    <p class="sub">L'intelligenza artificiale trova i volti, deforma il tuo per farlo combaciare e ne adatta luce e colori. Il resto della copertina resta identico, pixel per pixel.</p>
+  </header>
+
+  <div class="pick">
+    <label class="tile" id="tPoster"><b>1. Copertina</b><span>Tocca per scegliere la foto del film</span>
       <input type="file" id="posterIn" accept="image/*"></label>
-    <label class="file"><b>2. Foto del viso</b><span id="n2">Clicca per scegliere</span>
+    <label class="tile" id="tFace"><b>2. Il viso</b><span>Foto di fronte, ben illuminata</span>
       <input type="file" id="faceIn" accept="image/*"></label>
+  </div>
 
-    <div class="row"><span>Dimensione <em id="vScale"></em></span><input type="range" id="scale" min="5" max="300" value="60"></div>
-    <div class="row"><span>Rotazione <em id="vRot"></em></span><input type="range" id="rot" min="-45" max="45" value="0"></div>
-    <div class="row"><span>Ovale (ritaglio viso) <em id="vOval"></em></span><input type="range" id="oval" min="30" max="100" value="70"></div>
-    <div class="row"><span>Sfumatura bordi <em id="vFeather"></em></span><input type="range" id="feather" min="0" max="90" value="40"></div>
-    <div class="row"><span>Adatta colori alla copertina <em id="vColor"></em></span><input type="range" id="color" min="0" max="100" value="80"></div>
-    <div class="row"><span>Luminosità <em id="vBright"></em></span><input type="range" id="bright" min="50" max="150" value="100"></div>
-    <div class="row"><span>Trasparenza <em id="vAlpha"></em></span><input type="range" id="alpha" min="20" max="100" value="100"></div>
-    <label class="row" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" id="flip"> Specchia il viso</label>
+  <button id="go" disabled>Sostituisci il viso</button>
+  <p id="status" role="status"></p>
 
-    <button id="dl" disabled>⬇ Scarica immagine</button>
-    <button id="reset" class="sec">Reimposta</button>
-    <p class="hint">Trascina il viso sulla copertina. Rotella del mouse o pizzico per ingrandire. Tutto avviene nel browser: le foto non vengono caricate online.</p>
+  <section class="stage" id="stage" hidden>
+    <canvas id="out" width="10" height="10"></canvas>
+    <div class="overlay" id="overlay"></div>
   </section>
-  <section class="stage"><canvas id="cv" width="600" height="400"></canvas></section>
-</main>
+
+  <details id="tune" hidden>
+    <summary>Rifiniture</summary>
+    <div class="row"><span>Adatta colori e luce <em id="vColor"></em></span><input type="range" id="color" min="0" max="100" value="85"></div>
+    <div class="row"><span>Bordi morbidi <em id="vFeather"></em></span><input type="range" id="feather" min="2" max="25" value="9"></div>
+    <div class="row"><span>Intensità <em id="vAlpha"></em></span><input type="range" id="alpha" min="30" max="100" value="100"></div>
+  </details>
+
+  <div class="actions" id="actions" hidden>
+    <button id="save">Salva immagine</button>
+    <button id="reset" class="sec">Ricomincia</button>
+  </div>
+  <p class="hint">Tutto avviene nel telefono: le foto non vengono caricate da nessuna parte. Alla prima sostituzione si scarica il modello AI (circa 10 MB), poi resta in cache.</p>
+</div>
 
 <script>
+const CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/';
+const MAX_POSTER = 4000, MAX_FACE = 1600;
 const $ = id => document.getElementById(id);
-const cv = $('cv'), ctx = cv.getContext('2d', { willReadFrequently: true });
-let poster = null, face = null;
-let pos = { x: 0, y: 0 };   // centro del viso in coordinate copertina
-const ctl = ['scale','rot','oval','feather','color','bright','alpha'];
-const units = { scale:'%', rot:'°', oval:'%', feather:'%', color:'%', bright:'%', alpha:'%' };
-const defaults = {}; ctl.forEach(k => defaults[k] = $(k).value);
+const out = $('out'), octx = out.getContext('2d', { willReadFrequently: true });
+const S = { poster: null, face: null, posterFaces: null, faceFaces: null, sel: 0, busy: false, ready: false, tris: null, oval: null };
 
-function loadImg(file) {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = rej;
-    img.src = URL.createObjectURL(file);
+function status(msg, cls) { const s = $('status'); s.textContent = msg || ''; s.className = cls || ''; }
+const tick = () => new Promise(r => setTimeout(r, 30));
+
+/* ---------- caricamento immagini ---------- */
+function fileToCanvas(file, maxSide) {
+  return new Promise((ok, ko) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const sc = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * sc); c.height = Math.round(img.naturalHeight * sc);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); ok(c);
+    };
+    img.onerror = () => ko(new Error('Immagine non leggibile.'));
+    img.src = url;
   });
+}
+function setTile(tile, canvas, label) {
+  tile.classList.add('has');
+  let img = tile.querySelector('img'); if (!img) { img = new Image(); tile.appendChild(img); }
+  const t = document.createElement('canvas'), k = Math.min(1, 400 / Math.max(canvas.width, canvas.height));
+  t.width = canvas.width * k; t.height = canvas.height * k; t.getContext('2d').drawImage(canvas, 0, 0, t.width, t.height);
+  img.src = t.toDataURL('image/jpeg', 0.7);
+  let b = tile.querySelector('.badge'); if (!b) { b = document.createElement('div'); b.className = 'badge'; tile.appendChild(b); }
+  b.textContent = label;
 }
 $('posterIn').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  poster = await loadImg(f); $('n1').textContent = f.name;
-  cv.width = poster.naturalWidth; cv.height = poster.naturalHeight;
-  pos = { x: cv.width / 2, y: cv.height * 0.3 };
-  render();
+  try { S.poster = await fileToCanvas(f, MAX_POSTER); S.posterFaces = null; setTile($('tPoster'), S.poster, 'Copertina ' + S.poster.width + '×' + S.poster.height); status(''); }
+  catch (err) { status(err.message, 'err'); }
+  $('go').disabled = !(S.poster && S.face);
 };
 $('faceIn').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  face = await loadImg(f); $('n2').textContent = f.name;
-  render();
-};
-ctl.forEach(k => $(k).oninput = render);
-$('flip').onchange = render;
-$('reset').onclick = () => {
-  ctl.forEach(k => $(k).value = defaults[k]); $('flip').checked = false;
-  if (poster) pos = { x: cv.width / 2, y: cv.height * 0.3 };
-  render();
+  try { S.face = await fileToCanvas(f, MAX_FACE); S.faceFaces = null; setTile($('tFace'), S.face, 'Viso caricato'); status(''); }
+  catch (err) { status(err.message, 'err'); }
+  $('go').disabled = !(S.poster && S.face);
 };
 
-// Colore medio di una regione di un canvas/immagine
-function avgColor(c2d, x, y, w, h, mask) {
-  x = Math.max(0, Math.round(x)); y = Math.max(0, Math.round(y));
-  w = Math.min(c2d.canvas.width - x, Math.round(w)); h = Math.min(c2d.canvas.height - y, Math.round(h));
-  if (w < 1 || h < 1) return [128,128,128];
-  const d = c2d.getImageData(x, y, w, h).data;
-  let r=0,g=0,b=0,n=0;
-  for (let i=0;i<d.length;i+=4) {
-    const a = d[i+3]; if (a < 128) continue;
-    r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++;
-  }
-  return n ? [r/n, g/n, b/n] : [128,128,128];
+/* ---------- riconoscimento volti (MediaPipe Face Mesh, 468 punti) ---------- */
+let fm = null, pending = null;
+function loadScript(src) {
+  return new Promise((ok, ko) => {
+    const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous'; s.onload = ok;
+    s.onerror = () => ko(new Error('Non riesco a scaricare il motore AI. Controlla la connessione e riprova.'));
+    document.head.appendChild(s);
+  });
 }
-
-const bg = document.createElement('canvas');   // copertina senza viso, per campionare i colori
-const fc = document.createElement('canvas');   // viso preparato (ritagliato e colorato)
-
-function render() {
-  if (!poster) {
-    cv.width = 600; cv.height = 400;
-    ctx.fillStyle = '#2a2d36'; ctx.fillRect(0,0,600,400);
-    ctx.fillStyle = '#9aa0ae'; ctx.font = '20px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText('Carica una copertina per iniziare', 300, 200);
-    return;
-  }
-  ctl.forEach(k => $('v'+k[0].toUpperCase()+k.slice(1)).textContent = $(k).value + units[k]);
-  const W = cv.width, H = cv.height;
-  ctx.globalAlpha = 1; ctx.drawImage(poster, 0, 0, W, H);
-  $('dl').disabled = !face;
-  if (!face) return;
-
-  // dimensione del viso: slider = larghezza in % della larghezza copertina
-  const fw = W * $('scale').value / 100;
-  const fh = fw * face.naturalHeight / face.naturalWidth;
-  const ow = Math.min(512, Math.round(fw)), oh = Math.round(ow * fh / fw);
-  fc.width = ow; fc.height = oh;
-  const f = fc.getContext('2d', { willReadFrequently: true });
-  f.clearRect(0,0,ow,oh);
-  f.save();
-  if ($('flip').checked) { f.translate(ow,0); f.scale(-1,1); }
-  f.drawImage(face, 0, 0, ow, oh);
-  f.restore();
-
-  // maschera ovale sfumata
-  const rx = ow/2 * $('oval').value/100, ry = oh/2 * $('oval').value/100;
-  const inner = 1 - $('feather').value/100;
-  f.save();
-  f.globalCompositeOperation = 'destination-in';
-  f.translate(ow/2, oh/2); f.scale(1, ry/rx);
-  const g = f.createRadialGradient(0,0,0, 0,0,rx);
-  g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(Math.max(0.01, inner), 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-  f.fillStyle = g; f.beginPath(); f.arc(0,0,rx,0,Math.PI*2); f.fill();
-  f.restore();
-
-  // adattamento colori: sposta la media del viso verso quella della copertina attorno al punto
-  const strength = $('color').value / 100, br = $('bright').value / 100;
-  if (strength > 0 || br !== 1) {
-    bg.width = W; bg.height = H;
-    const b = bg.getContext('2d', { willReadFrequently: true }); b.drawImage(poster, 0, 0, W, H);
-    const t = avgColor(b, pos.x - fw*0.35, pos.y - fh*0.35, fw*0.7, fh*0.7);
-    const s = avgColor(f, ow*0.2, oh*0.2, ow*0.6, oh*0.6);
-    const img = f.getImageData(0, 0, ow, oh), d = img.data;
-    const dr = (t[0]-s[0])*strength, dg = (t[1]-s[1])*strength, db = (t[2]-s[2])*strength;
-    for (let i=0;i<d.length;i+=4) {
-      d[i]   = Math.max(0, Math.min(255, (d[i]  +dr)*br));
-      d[i+1] = Math.max(0, Math.min(255, (d[i+1]+dg)*br));
-      d[i+2] = Math.max(0, Math.min(255, (d[i+2]+db)*br));
+async function getFM() {
+  if (fm) return fm;
+  if (typeof FaceMesh === 'undefined') await loadScript(CDN + 'face_mesh.js');
+  const m = new FaceMesh({ locateFile: f => CDN + f });
+  m.setOptions({ maxNumFaces: 8, refineLandmarks: false, staticImageMode: true, minDetectionConfidence: 0.4 });
+  m.onResults(r => { if (pending) { const p = pending; pending = null; p(r.multiFaceLandmarks || []); } });
+  await m.initialize();
+  prepMesh();
+  return (fm = m);
+}
+async function detectRegion(canvas, x, y, w, h, target) {
+  const m = await getFM();
+  const k = Math.min(target / Math.max(w, h), 2);
+  const t = document.createElement('canvas'); t.width = Math.max(32, Math.round(w * k)); t.height = Math.max(32, Math.round(h * k));
+  t.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, t.width, t.height);
+  const res = await new Promise(async (ok, ko) => {
+    pending = ok;
+    try { await m.send({ image: t }); if (pending) { const p = pending; pending = null; p([]); } }
+    catch (e) { pending = null; ko(e); }
+  });
+  return res.map(lm => lm.map(p => ({ x: (x + p.x * w) / canvas.width, y: (y + p.y * h) / canvas.height })));
+}
+const bbox = lm => { let a = 1, b = 1, c = 0, d = 0; for (const p of lm) { if (p.x < a) a = p.x; if (p.y < b) b = p.y; if (p.x > c) c = p.x; if (p.y > d) d = p.y; } return { x0: a, y0: b, x1: c, y1: d }; };
+const area = lm => { const b = bbox(lm); return (b.x1 - b.x0) * (b.y1 - b.y0); };
+async function findFaces(canvas) {
+  const W = canvas.width, H = canvas.height;
+  let faces = await detectRegion(canvas, 0, 0, W, H, 1280);
+  if (!faces.length) {            // volti piccoli: riprova a riquadri sovrapposti
+    for (const n of [2, 3]) {
+      const tw = W / (1 + (n - 1) * 0.65), th = H / (1 + (n - 1) * 0.65);
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+        const f = await detectRegion(canvas, i * tw * 0.65, j * th * 0.65, tw, th, 1024);
+        for (const lm of f) {
+          const b = bbox(lm), cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+          const dup = faces.some(o => { const q = bbox(o); return Math.hypot((q.x0 + q.x1) / 2 - cx, (q.y0 + q.y1) / 2 - cy) < (q.x1 - q.x0) * 0.5; });
+          if (!dup) faces.push(lm);
+        }
+      }
+      if (faces.length) break;
     }
-    f.putImageData(img, 0, 0);
   }
-
-  ctx.save();
-  ctx.globalAlpha = $('alpha').value / 100;
-  ctx.translate(pos.x, pos.y);
-  ctx.rotate($('rot').value * Math.PI / 180);
-  ctx.drawImage(fc, -fw/2, -fh/2, fw, fh);
-  ctx.restore();
+  return faces.sort((a, b) => area(b) - area(a));
 }
 
-// Trascinamento + zoom
-let drag = null;
-const toCanvas = e => {
-  const r = cv.getBoundingClientRect();
-  return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height };
-};
-cv.addEventListener('pointerdown', e => {
-  if (!poster || !face) return;
-  const p = toCanvas(e); drag = { dx: pos.x - p.x, dy: pos.y - p.y };
-  cv.setPointerCapture(e.pointerId);
-});
-cv.addEventListener('pointermove', e => {
-  if (!drag) return;
-  const p = toCanvas(e); pos = { x: p.x + drag.dx, y: p.y + drag.dy }; render();
-});
-cv.addEventListener('pointerup', () => drag = null);
-cv.addEventListener('wheel', e => {
-  if (!face) return; e.preventDefault();
-  const s = $('scale'); s.value = Math.max(+s.min, Math.min(+s.max, +s.value * (e.deltaY < 0 ? 1.05 : 0.95)));
-  render();
-}, { passive: false });
+/* ---------- maglia del viso: triangoli e ovale ---------- */
+function prepMesh() {
+  if (S.tris) return;
+  const adj = new Map(), add = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); };
+  for (const e of FACEMESH_TESSELATION) { add(e[0], e[1]); add(e[1], e[0]); }
+  const tris = [];
+  for (const [a, na] of adj) for (const b of na) if (b > a) for (const c of adj.get(b)) if (c > b && na.has(c)) tris.push([a, b, c]);
+  S.tris = tris;
+  const o = new Set(); for (const e of FACEMESH_FACE_OVAL) { o.add(e[0]); o.add(e[1]); }
+  S.oval = [...o];
+}
+function affine(s, d) {   // trasformazione che porta il triangolo s sul triangolo d: x' = a x + c y + e, y' = b x + d y + f
+  const [s0, s1, s2] = s, [d0, d1, d2] = d;
+  const det = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
+  if (Math.abs(det) < 1e-6) return null;
+  const k = (v0, v1, v2) => [
+    (v0 * (s1.y - s2.y) + v1 * (s2.y - s0.y) + v2 * (s0.y - s1.y)) / det,
+    (v0 * (s2.x - s1.x) + v1 * (s0.x - s2.x) + v2 * (s1.x - s0.x)) / det,
+    (v0 * (s1.x * s2.y - s2.x * s1.y) + v1 * (s2.x * s0.y - s0.x * s2.y) + v2 * (s0.x * s1.y - s1.x * s0.y)) / det];
+  const [a, c, e] = k(d0.x, d1.x, d2.x), [b, dd, f] = k(d0.y, d1.y, d2.y);
+  return [a, b, c, dd, e, f];
+}
+function blur1d(src, dst, w, h, r, horiz) {
+  const n = horiz ? w : h, m = horiz ? h : w, pre = new Float32Array(n + 1), inv = 1 / (2 * r + 1);
+  for (let j = 0; j < m; j++) {
+    for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + src[horiz ? j * w + i : i * w + j];
+    for (let i = 0; i < n; i++) dst[horiz ? j * w + i : i * w + j] = (pre[Math.min(n, i + r + 1)] - pre[Math.max(0, i - r)]) * inv;
+  }
+}
+function softMask(poly, w, h, r) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.beginPath();
+  poly.forEach((p, i) => i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y)); x.closePath(); x.fill();
+  const d = x.getImageData(0, 0, w, h).data, a = new Float32Array(w * h), t = new Float32Array(w * h);
+  for (let i = 0; i < a.length; i++) a[i] = d[i * 4 + 3];
+  for (let k = 0; k < 2; k++) { blur1d(a, t, w, h, r, true); blur1d(t, a, w, h, r, false); }
+  return a;
+}
+const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 
-$('dl').onclick = () => {
-  const a = document.createElement('a');
-  a.download = 'copertina-modificata.png';
-  a.href = cv.toDataURL('image/png'); a.click();
+/* ---------- sostituzione ---------- */
+const lc = document.createElement('canvas');
+function render() {
+  const P = S.poster, W = P.width, H = P.height;
+  out.width = W; out.height = H; octx.drawImage(P, 0, 0);   // copertina originale, intatta
+  const tf = S.posterFaces && S.posterFaces[S.sel], sf = S.faceFaces && S.faceFaces[0];
+  if (!tf || !sf) return;
+  const tp = tf.map(p => ({ x: p.x * W, y: p.y * H })), sp = sf.map(p => ({ x: p.x * S.face.width, y: p.y * S.face.height }));
+
+  // ovale del volto bersaglio, ordinato lungo il contorno
+  const ov = S.oval.map(i => tp[i]);
+  const cx = ov.reduce((s, p) => s + p.x, 0) / ov.length, cy = ov.reduce((s, p) => s + p.y, 0) / ov.length;
+  ov.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  const xs = ov.map(p => p.x), ys = ov.map(p => p.y);
+  const fw = Math.max(...xs) - Math.min(...xs);
+  const feather = Math.max(2, fw * $('feather').value / 100), pad = Math.ceil(feather + 6);
+  const bx = Math.max(0, Math.floor(Math.min(...xs) - pad)), by = Math.max(0, Math.floor(Math.min(...ys) - pad));
+  const bw = Math.min(W, Math.ceil(Math.max(...xs) + pad)) - bx, bh = Math.min(H, Math.ceil(Math.max(...ys) + pad)) - by;
+  if (bw < 8 || bh < 8) return;
+
+  // 1) viso sorgente deformato triangolo per triangolo sulla geometria del bersaglio
+  lc.width = bw; lc.height = bh;
+  const lx = lc.getContext('2d', { willReadFrequently: true });
+  lx.clearRect(0, 0, bw, bh);
+  for (const t of S.tris) {
+    const d = t.map(i => ({ x: tp[i].x - bx, y: tp[i].y - by })), s = t.map(i => sp[i]);
+    const m = affine(s, d); if (!m) continue;
+    const gx = (d[0].x + d[1].x + d[2].x) / 3, gy = (d[0].y + d[1].y + d[2].y) / 3;
+    lx.save(); lx.beginPath();
+    d.forEach((p, i) => { const l = Math.hypot(p.x - gx, p.y - gy) || 1, q = { x: p.x + (p.x - gx) / l * 0.8, y: p.y + (p.y - gy) / l * 0.8 }; i ? lx.lineTo(q.x, q.y) : lx.moveTo(q.x, q.y); });
+    lx.closePath(); lx.clip(); lx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]); lx.drawImage(S.face, 0, 0); lx.restore();
+  }
+
+  // 2) maschera morbida lungo l'ovale (leggermente ristretta)
+  const shrink = feather * 0.5 + fw * 0.012;
+  const poly = ov.map(p => { const dx = p.x - cx, dy = p.y - cy, l = Math.hypot(dx, dy) || 1; return { x: p.x - bx - dx / l * shrink, y: p.y - by - dy / l * shrink }; });
+  const A = softMask(poly, bw, bh, Math.max(1, Math.round(feather / 3)));
+
+  // 3) colore e luce: porta media e contrasto del viso verso quelli della copertina nella stessa zona
+  const L = lx.getImageData(0, 0, bw, bh), B = octx.getImageData(bx, by, bw, bh), ld = L.data, bd = B.data;
+  const sL = [0, 0, 0], sP = [0, 0, 0], qL = [0, 0, 0], qP = [0, 0, 0]; let n = 0;
+  for (let i = 0, p = 0; i < A.length; i++, p += 4) if (A[i] > 230 && ld[p + 3] > 230) {
+    n++; for (let c = 0; c < 3; c++) { const a = ld[p + c], b = bd[p + c]; sL[c] += a; sP[c] += b; qL[c] += a * a; qP[c] += b * b; }
+  }
+  const s = $('color').value / 100, op = $('alpha').value / 100;
+  const mL = [0, 0, 0], mP = [0, 0, 0], k = [1, 1, 1];
+  if (n > 50) for (let c = 0; c < 3; c++) {
+    mL[c] = sL[c] / n; mP[c] = sP[c] / n;
+    const dL = Math.sqrt(Math.max(1, qL[c] / n - mL[c] * mL[c])), dP = Math.sqrt(Math.max(1, qP[c] / n - mP[c] * mP[c]));
+    k[c] = 1 + (clamp(dP / dL, 0.7, 1.5) - 1) * s;
+  }
+  for (let i = 0, p = 0; i < A.length; i++, p += 4) {
+    if (A[i] < 1 || !ld[p + 3]) { ld[p + 3] = 0; continue; }
+    if (n > 50) for (let c = 0; c < 3; c++) ld[p + c] = clamp((ld[p + c] - mL[c]) * k[c] + mL[c] + (mP[c] - mL[c]) * s, 0, 255);
+    ld[p + 3] = ld[p + 3] * (A[i] / 255) * op;
+  }
+  lx.putImageData(L, 0, 0);
+  octx.drawImage(lc, bx, by);
+}
+let raf = 0;
+function rerender() {
+  ['color', 'feather', 'alpha'].forEach(id => $('v' + id[0].toUpperCase() + id.slice(1)).textContent = $(id).value + '%');
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (S.ready) render(); });
+}
+['color', 'feather', 'alpha'].forEach(id => $(id).oninput = rerender);
+
+function buildOverlay() {
+  const ov = $('overlay'); ov.innerHTML = '';
+  if (!S.posterFaces || S.posterFaces.length < 2) return;
+  S.posterFaces.forEach((lm, i) => {
+    const b = bbox(lm), btn = document.createElement('button');
+    btn.style.cssText = `left:${b.x0 * 100}%;top:${b.y0 * 100}%;width:${(b.x1 - b.x0) * 100}%;height:${(b.y1 - b.y0) * 100}%`;
+    btn.setAttribute('aria-label', 'Sostituisci il volto ' + (i + 1));
+    if (i === S.sel) btn.className = 'sel';
+    btn.onclick = () => { S.sel = i; buildOverlay(); render(); };
+    ov.appendChild(btn);
+  });
+}
+
+$('go').onclick = async () => {
+  if (S.busy) return; S.busy = true; $('go').disabled = true;
+  try {
+    status('Avvio il motore AI… la prima volta può richiedere qualche secondo.');
+    await tick(); await getFM();
+    if (!S.faceFaces) { status('Cerco il tuo viso…'); await tick(); S.faceFaces = await findFaces(S.face); }
+    if (!S.faceFaces.length) throw new Error('Non trovo il viso nella tua foto. Usa una foto frontale, ben illuminata, senza occhiali scuri.');
+    if (!S.posterFaces) { status('Cerco i volti nella copertina…'); await tick(); S.posterFaces = await findFaces(S.poster); }
+    if (!S.posterFaces.length) throw new Error('Non trovo volti nella copertina. Se è disegnata o i volti sono molto piccoli può non riconoscerli: prova con una copertina più nitida.');
+    status('Adatto il viso alla copertina…'); await tick();
+    S.sel = 0; S.ready = true; rerender(); render(); buildOverlay();
+    $('stage').hidden = $('tune').hidden = $('actions').hidden = false;
+    const n = S.posterFaces.length;
+    status(n > 1 ? `Fatto. Ho trovato ${n} volti: tocca quello che vuoi sostituire.` : 'Fatto.', 'ok');
+    $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { status(e.message || String(e), 'err'); }
+  S.busy = false; $('go').disabled = false;
 };
-render();
+
+$('save').onclick = () => {
+  out.toBlob(async blob => {
+    const file = new File([blob], 'copertina-modificata.png', { type: 'image/png' });
+    try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; } }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+  }, 'image/png');
+};
+$('reset').onclick = () => {
+  S.ready = false; S.poster = S.face = S.posterFaces = S.faceFaces = null;
+  ['tPoster', 'tFace'].forEach(id => { const t = $(id); t.classList.remove('has'); t.querySelectorAll('img,.badge').forEach(x => x.remove()); });
+  $('posterIn').value = $('faceIn').value = '';
+  $('stage').hidden = $('tune').hidden = $('actions').hidden = true; $('go').disabled = true; status('');
+  scrollTo({ top: 0, behavior: 'smooth' });
+};
+rerender();
 </script>
 </body>
 </html>
