@@ -157,13 +157,17 @@ async function getFM() {
     }
     step = 'file di calcolo';
     const files = await VIS.FilesetResolver.forVisionTasks(VIS.base + 'wasm');
-    step = 'modello del viso (circa 4 MB)';
+    step = 'download del modello (circa 4 MB)';
+    const r = await fetch(MODEL);
+    if (!r.ok) throw new Error('risposta ' + r.status);
+    const buf = new Uint8Array(await r.arrayBuffer());
+    step = 'avvio del modello (' + Math.round(buf.length / 1024) + ' KB scaricati)';
     fm = await VIS.FaceLandmarker.createFromOptions(files, {
-      baseOptions: { modelAssetPath: MODEL, delegate: 'CPU' },   // CPU: sui telefoni la GPU può dare coordinate sbagliate
+      baseOptions: { modelAssetBuffer: buf, delegate: 'CPU' },   // CPU: sui telefoni la GPU può dare coordinate sbagliate
       runningMode: 'IMAGE', numFaces: 8, minFaceDetectionConfidence: 0.4, minFacePresenceConfidence: 0.4 });
   } catch (e) {
     console.error(e);
-    throw new Error('Non riesco a caricare: ' + step + '. Dettaglio: ' + ((e && (e.name + ': ' + e.message)) || e).toString().slice(0, 100));
+    throw new Error('Non riesco a caricare: ' + step + '. Dettaglio: ' + (e && e.message ? (e.name || 'Errore') + ': ' + e.message : 'nessun dettaglio (' + String(e) + ')').slice(0, 120));
   }
   prepMesh();
   return fm;
