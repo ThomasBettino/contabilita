@@ -161,17 +161,26 @@ async function getFM() {
   prepMesh();
   return (fm = m);
 }
-async function detectRegion(canvas, x, y, w, h, target) {
+async function resetFM() { try { if (fm && fm.close) await fm.close(); } catch (e) {} fm = null; pending = null; }
+async function detectRegion(canvas, x, y, w, h, target, retry = true) {
   const m = await getFM();
-  const k = Math.min(target / Math.max(w, h), 2);
-  const t = document.createElement('canvas'); t.width = Math.max(32, Math.round(w * k)); t.height = Math.max(32, Math.round(h * k));
-  t.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, t.width, t.height);
-  const res = await new Promise(async (ok, ko) => {
-    pending = ok;
-    try { await m.send({ image: t }); if (pending) { const p = pending; pending = null; p([]); } }
-    catch (e) { pending = null; ko(e); }
-  });
-  return res.map(lm => lm.map(p => ({ x: (x + p.x * w) / canvas.width, y: (y + p.y * h) / canvas.height })));
+  const SZ = 1024, k = Math.min(SZ / Math.max(w, h), 2);          // sempre lo stesso formato in ingresso: il motore non si blocca
+  const t = document.createElement('canvas'); t.width = t.height = SZ;
+  const tx = t.getContext('2d'); tx.fillStyle = '#000'; tx.fillRect(0, 0, SZ, SZ);
+  tx.drawImage(canvas, x, y, w, h, 0, 0, Math.round(w * k), Math.round(h * k));
+  let res;
+  try {
+    res = await new Promise(async (ok, ko) => {
+      pending = ok;
+      try { await m.send({ image: t }); if (pending) { const p = pending; pending = null; p([]); } }
+      catch (e) { pending = null; ko(e); }
+    });
+  } catch (e) {
+    console.error(e); await resetFM();
+    if (retry) return detectRegion(canvas, x, y, w, h, target, false);
+    throw new Error('Il motore AI si è bloccato. Ricarica la pagina e riprova.');
+  }
+  return res.map(lm => lm.map(p => ({ x: (x + p.x * SZ / k) / canvas.width, y: (y + p.y * SZ / k) / canvas.height })));
 }
 const bbox = lm => { let a = 1, b = 1, c = 0, d = 0; for (const p of lm) { if (p.x < a) a = p.x; if (p.y < b) b = p.y; if (p.x > c) c = p.x; if (p.y > d) d = p.y; } return { x0: a, y0: b, x1: c, y1: d }; };
 const area = lm => { const b = bbox(lm); return (b.x1 - b.x0) * (b.y1 - b.y0); };
@@ -340,7 +349,7 @@ $('go').onclick = async () => {
     const n = S.posterFaces.length, b = bbox(S.posterFaces[0]);
     status(`Fatto. Volti trovati nella copertina: ${n} (il principale è largo il ${Math.round((b.x1 - b.x0) * 100)}% della foto, centro a ${Math.round((b.x0 + b.x1) * 50)}% / ${Math.round((b.y0 + b.y1) * 50)}%).` + (n > 1 ? ' Tocca il volto da sostituire.' : ''), 'ok');
     $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } catch (e) { status(e.message || String(e), 'err'); }
+  } catch (e) { console.error(e); const m = e && e.message || String(e); status(m.length > 140 ? 'Qualcosa è andato storto. Ricarica la pagina e riprova.' : m, 'err'); }
   S.busy = false; $('go').disabled = false;
 };
 
