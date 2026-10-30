@@ -356,7 +356,7 @@ $('go').onclick = async () => {
     const n = S.posterFaces.length, b = bbox(S.posterFaces[0]);
     status(`Fatto. Volti trovati nella copertina: ${n} (il principale è largo il ${Math.round((b.x1 - b.x0) * 100)}% della foto, centro a ${Math.round((b.x0 + b.x1) * 50)}% / ${Math.round((b.y0 + b.y1) * 50)}%).` + (n > 1 ? ' Tocca il volto da sostituire.' : ''), 'ok');
     $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } catch (e) { console.error(e); const m = e && e.message || String(e); status(m.length > 140 ? 'Qualcosa è andato storto. Ricarica la pagina e riprova.' : m, 'err'); }
+  } catch (e) { console.error(e); const m = e && e.message || String(e); status(m.slice(0, 500), 'err'); }
   S.busy = false; $('go').disabled = false;
 };
 
